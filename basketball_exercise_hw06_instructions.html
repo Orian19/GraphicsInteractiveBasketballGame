@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Computer Graphics - Exercise 6 - Interactive Basketball Shooting Game with Physics</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .instructions {
+            background-color: #f9f9f9;
+            border-left: 5px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .mandatory {
+            background-color: #e8f4f8;
+            border-left: 5px solid #e74c3c;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .physics {
+            background-color: #f0f8f0;
+            border-left: 5px solid #27ae60;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .code {
+            font-family: monospace;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 20px auto;
+            border: 1px solid #ddd;
+        }
+        .note {
+            background-color: #fffbea;
+            border-left: 5px solid #f1c40f;
+            padding: 10px;
+            margin: 15px 0;
+        }
+        .resources {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .highlight {
+            background-color: #FFFF99;
+            font-weight: bold;
+            padding: 2px 4px;
+        }
+        .controls-table {
+            background-color: #f8f9fa;
+            border: 2px solid #007bff;
+        }
+        .controls-table th {
+            background-color: #007bff;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Computer Graphics - Exercise 6</h1>
+        <h2>Interactive Basketball Shooting Game with Physics</h2>
+        <p>Spring Semester 2025</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>
+        In this exercise, you will extend your HW05 basketball court infrastructure by implementing interactive controls, 
+        physics-based movement, realistic basketball shooting mechanics, rotation animations, and a comprehensive scoring system. 
+        This exercise transforms your static 3D basketball court into a fully interactive shooting game.
+    </p>
+
+    <div class="note">
+        <h3>PREREQUISITE</h3>
+        <p><strong>This exercise builds upon HW05.</strong> You must have completed HW05 (Interactive Basketball Court Infrastructure) 
+        before starting this exercise. Your HW05 implementation should include the court, hoops, static basketball, and basic UI framework.</p>
+    </div>
+
+    <div class="mandatory">
+        <h3>MANDATORY REQUIREMENTS - HW06 INTERACTIVE FEATURES</h3>
+        <p>Your implementation <strong>MUST</strong> include ALL of the following interactive and physics features:</p>
+        <ol>
+            <li><strong>Physics-Based Basketball Movement:</strong>
+                <ul>
+                    <li>Realistic gravity simulation affecting basketball trajectory</li>
+                    <li>Proper arc physics for basketball shots</li>
+                    <li>Ball bouncing mechanics with energy loss</li>
+                    <li>Ground collision detection and response</li>
+                    <li>Hoop/rim collision detection for successful shots</li>
+                </ul>
+            </li>
+            <li><strong>Interactive Basketball Controls:</strong>
+                <ul>
+                    <li>Arrow keys for horizontal basketball movement (left/right, forward/backward)</li>
+                    <li>W/S keys for vertical power adjustment (shot strength)</li>
+                    <li>Spacebar for shooting the basketball</li>
+                    <li>R key for resetting basketball position to center court</li>
+                </ul>
+            </li>
+            <li><strong>Basketball Rotation Animations:</strong>
+                <ul>
+                    <li>Realistic ball rotation during movement and flight</li>
+                    <li>Rotation axis should match movement direction</li>
+                    <li>Rotation speed proportional to ball velocity</li>
+                    <li>Smooth rotation transitions</li>
+                </ul>
+            </li>
+            <li><strong>Comprehensive Scoring System:</strong>
+                <ul>
+                    <li>Real-time score tracking and display</li>
+                    <li>Shot attempt counter</li>
+                    <li>Shot accuracy percentage calculation</li>
+                    <li>Score display updated immediately upon successful shots</li>
+                    <li>Visual feedback for successful/missed shots</li>
+                </ul>
+            </li>
+            <li><strong>Enhanced User Interface:</strong>
+                <ul>
+                    <li>Live display of current score</li>
+                    <li>Shot attempts and accuracy statistics</li>
+                    <li>Current shot power indicator</li>
+                    <li>Control instructions panel</li>
+                    <li>Game status messages (shot made/missed)</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <div class="physics">
+        <h3>PHYSICS IMPLEMENTATION REQUIREMENTS</h3>
+        <p>Your physics system must implement realistic basketball mechanics:</p>
+        
+        <h4>1. Gravity and Trajectory</h4>
+        <ul>
+            <li>Constant downward acceleration (gravity = -9.8 m/s² or scaled equivalent)</li>
+            <li>Parabolic trajectory for shot basketball</li>
+            <li>Initial velocity components based on shot angle and power</li>
+            <li>Realistic arc height for basketball shots</li>
+        </ul>
+
+        <h4>2. Collision Detection</h4>
+        <ul>
+            <li>Ball-to-ground collision with bounce mechanics</li>
+            <li>Ball-to-rim collision for successful shots</li>
+            <li>Energy loss on each bounce (coefficient of restitution)</li>
+            <li>Ball should come to rest after multiple bounces</li>
+        </ul>
+
+        <h4>3. Shot Mechanics</h4>
+        <ul>
+            <li>Adjustable shot power affecting initial velocity</li>
+            <li>Shot angle calculation based on basketball position relative to hoop</li>
+            <li>Minimum arc height to clear rim for successful shots</li>
+            <li>Ball must pass through hoop area for score detection</li>
+        </ul>
+    </div>
+
+    <div class="instructions">
+        <h3>DETAILED CONTROL SPECIFICATIONS</h3>
+        
+        <table class="controls-table">
+            <tr>
+                <th>Control</th>
+                <th>Function</th>
+                <th>Implementation Details</th>
+            </tr>
+            <tr>
+                <td><span class="highlight">Arrow Keys</span></td>
+                <td>Move Basketball</td>
+                <td>
+                    • Left/Right: Move ball horizontally across court<br>
+                    • Up/Down: Move ball forward/backward on court<br>
+                    • Smooth movement with appropriate speed<br>
+                    • Keep ball within court boundaries
+                </td>
+            </tr>
+            <tr>
+                <td><span class="highlight">W / S Keys</span></td>
+                <td>Adjust Shot Power</td>
+                <td>
+                    • W: Increase shot power (stronger shot)<br>
+                    • S: Decrease shot power (weaker shot)<br>
+                    • Visual indicator showing current power level<br>
+                    • Power range: 0% to 100%
+                </td>
+            </tr>
+            <tr>
+                <td><span class="highlight">Spacebar</span></td>
+                <td>Shoot Basketball</td>
+                <td>
+                    • Launch ball toward nearest hoop<br>
+                    • Use current power level for initial velocity<br>
+                    • Calculate trajectory to reach hoop<br>
+                    • Apply physics simulation after launch
+                </td>
+            </tr>
+            <tr>
+                <td><span class="highlight">R Key</span></td>
+                <td>Reset Basketball</td>
+                <td>
+                    • Return ball to center court position<br>
+                    • Reset ball velocity to zero<br>
+                    • Reset shot power to default (50%)<br>
+                    • Clear any physics state
+                </td>
+            </tr>
+            <tr>
+                <td><span class="highlight">O Key</span></td>
+                <td>Toggle Camera</td>
+                <td>
+                    • Enable/disable orbit camera controls<br>
+                    • (Inherited from HW05)
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="mandatory">
+        <h3>SCORING SYSTEM REQUIREMENTS</h3>
+        <p>Implement a comprehensive scoring system with the following features:</p>
+        
+        <h4>1. Score Detection</h4>
+        <ul>
+            <li>Detect when basketball passes through hoop area</li>
+            <li>Successful shot must have proper arc (ball must be moving downward)</li>
+            <li>Ball must pass through center of rim area</li>
+            <li>Each successful shot awards 2 points</li>
+        </ul>
+
+        <h4>2. Statistics Tracking</h4>
+        <ul>
+            <li><strong>Total Score:</strong> Points earned from successful shots</li>
+            <li><strong>Shot Attempts:</strong> Number of times spacebar was pressed</li>
+            <li><strong>Shots Made:</strong> Number of successful shots</li>
+            <li><strong>Shooting Percentage:</strong> (Shots Made / Shot Attempts) × 100%</li>
+        </ul>
+
+        <h4>3. Visual Feedback</h4>
+        <ul>
+            <li>Display "SHOT MADE!" message for successful shots</li>
+            <li>Display "MISSED SHOT" message for unsuccessful attempts</li>
+            <li>Update score display immediately</li>
+            <li>Highlight successful shots with visual effects (optional)</li>
+        </ul>
+    </div>
+
+    <div class="instructions">
+        <h3>IMPLEMENTATION PHASES</h3>
+        
+        <h4>Phase 1: Basic Movement Controls</h4>
+        <ol>
+            <li>Implement arrow key controls for basketball positioning</li>
+            <li>Add boundary checking to keep ball on court</li>
+            <li>Implement smooth movement transitions</li>
+            <li>Test all movement directions</li>
+        </ol>
+
+        <h4>Phase 2: Shot Power System</h4>
+        <ol>
+            <li>Implement W/S keys for power adjustment</li>
+            <li>Create visual power indicator in UI</li>
+            <li>Set power limits (0-100%)</li>
+            <li>Link power level to shot velocity</li>
+        </ol>
+
+        <h4>Phase 3: Physics and Shooting</h4>
+        <ol>
+            <li>Implement gravity and trajectory calculations</li>
+            <li>Add spacebar shooting mechanism</li>
+            <li>Calculate shot angle toward nearest hoop</li>
+            <li>Apply realistic physics to ball flight</li>
+        </ol>
+
+        <h4>Phase 4: Collision and Bouncing</h4>
+        <ol>
+            <li>Implement ground collision detection</li>
+            <li>Add bouncing mechanics with energy loss</li>
+            <li>Implement rim collision detection</li>
+            <li>Fine-tune bounce parameters</li>
+        </ol>
+
+        <h4>Phase 5: Rotation Animation</h4>
+        <ol>
+            <li>Add ball rotation during movement</li>
+            <li>Implement rotation during flight</li>
+            <li>Match rotation axis to movement direction</li>
+            <li>Scale rotation speed with velocity</li>
+        </ol>
+
+        <h4>Phase 6: Scoring System</h4>
+        <ol>
+            <li>Implement score detection logic</li>
+            <li>Add statistics tracking</li>
+            <li>Create score display UI</li>
+            <li>Add visual feedback for shots</li>
+        </ol>
+
+        <h4>Phase 7: UI Enhancement</h4>
+        <ol>
+            <li>Complete score and statistics display</li>
+            <li>Add control instructions panel</li>
+            <li>Implement shot feedback messages</li>
+            <li>Polish UI appearance and positioning</li>
+        </ol>
+    </div>
+
+    <div class="note">
+        <h3>TECHNICAL CONSIDERATIONS</h3>
+        <ul>
+            <li><strong>Frame Rate:</strong> Ensure smooth 60 FPS performance</li>
+            <li><strong>Physics Integration:</strong> Use proper time-based physics calculations</li>
+            <li><strong>Collision Precision:</strong> Accurate collision detection for fair gameplay</li>
+            <li><strong>User Experience:</strong> Responsive controls and clear visual feedback</li>
+            <li><strong>Code Organization:</strong> Separate physics, input handling, and rendering logic</li>
+        </ul>
+    </div>
+
+    <h3>Grading Criteria</h3>
+    <table>
+        <tr>
+            <th>Component</th>
+            <th>Points</th>
+            <th>Requirements</th>
+        </tr>
+        <tr>
+            <td>Physics System</td>
+            <td>30</td>
+            <td>Realistic gravity, trajectory, and collision mechanics</td>
+        </tr>
+        <tr>
+            <td>Interactive Controls</td>
+            <td>25</td>
+            <td>All required keyboard controls properly implemented</td>
+        </tr>
+        <tr>
+            <td>Basketball Animation</td>
+            <td>20</td>
+            <td>Realistic rotation animations during movement and flight</td>
+        </tr>
+        <tr>
+            <td>Scoring System</td>
+            <td>25</td>
+            <td>Accurate score detection and comprehensive statistics tracking</td>
+        </tr>
+    </table>
+
+    <div class="note">
+        <h3>Advanced Features (Optional) - Bonus: 10 Points</h3>
+        <p>For students seeking additional challenges, consider implementing any of these features for up to 10 bonus points:</p>
+        <ul>
+            <li><strong>Multiple Hoops:</strong> Allow shooting at both hoops with automatic targeting</li>
+            <li><strong>Swish Detection:</strong> Bonus points for shots that don't touch the rim</li>
+            <li><strong>Combo System:</strong> Consecutive shots award bonus points</li>
+            <li><strong>Time Challenge:</strong> Timed shooting challenges with countdown</li>
+            <li><strong>Sound Effects:</strong> Audio feedback for shots, bounces, and scores</li>
+            <li><strong>Ball Trail Effect:</strong> Visual trail following the basketball during flight</li>
+            <li><strong>Advanced Physics:</strong> Air resistance, spin effects, or wind simulation</li>
+            <li><strong>Game Modes:</strong> Different game modes (free shoot, timed challenge, etc.)</li>
+            <li><strong>Leaderboard:</strong> High score tracking with local storage</li>
+        </ul>
+    </div>
+
+    <div class="resources">
+        <h3>Helpful Resources</h3>
+        <ul>
+            <li><a href="https://threejs.org/docs/">Three.js Documentation</a></li>
+            <li><a href="https://threejs.org/examples/">Three.js Examples</a></li>
+            <li><a href="https://discoverthreejs.com/">Discover Three.js</a></li>
+            <li><a href="https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent">Keyboard Event Handling</a></li>
+            <li><a href="https://www.khanacademy.org/science/physics/two-dimensional-motion/projectile-motion/a/what-is-projectile-motion">Physics: Projectile Motion</a></li>
+        </ul>
+    </div>
+
+    <h3>Submission Requirements</h3>
+    <p>
+        Submit your completed exercise in one of the following ways:
+    </p>
+    <ul>
+        <li><strong>RECOMMENDED: Link to a public GitHub repository</strong> containing your code and screenshots</li>
+        <li>Alternative: Zip file containing all files</li>
+    </ul>
+    <p>
+        Your submission must include:
+    </p>
+    <ul>
+        <li>All source code files (building upon your HW05 implementation)</li>
+        <li>A README.md file explaining:
+            <ul>
+                <li><strong>MANDATORY: Full names of all group members</strong></li>
+                <li>How to run your implementation</li>
+                <li>Complete list of implemented controls</li>
+                <li>Description of physics system implementation</li>
+                <li>Any additional features you implemented</li>
+                <li>Any known issues or limitations</li>
+                <li>Sources of any external assets used</li>
+            </ul>
+        </li>
+        <li><strong>MANDATORY: Screenshots/Video of your implementation showing:</strong>
+            <ul>
+                <li>Basketball being moved around the court using arrow keys</li>
+                <li>Shot power adjustment demonstration (W/S keys)</li>
+                <li>Basketball shooting mechanics (spacebar)</li>
+                <li>Successful shot with score update</li>
+                <li>Ball rotation animation during movement and flight</li>
+                <li>Complete UI showing scores, statistics, and controls</li>
+                <li><strong>OPTIONAL: Short video (30-60 seconds) demonstrating gameplay</strong></li>
+            </ul>
+        </li>
+    </ul>
+
+    <div class="note">
+        <p><strong>Due Date:</strong> July 6, 2025, 23:59</p>
+        <p><strong>Late Submission:</strong> 10% penalty per day late</p>
+    </div>
+
+    <div class="mandatory">
+        <h3>FINAL TESTING CHECKLIST</h3>
+        <p>Before submitting, ensure your implementation passes ALL of these tests:</p>
+        <ul>
+            <li>✓ Basketball moves smoothly with arrow keys in all directions</li>
+            <li>✓ W/S keys adjust shot power with visual feedback</li>
+            <li>✓ Spacebar shoots basketball toward hoop with proper trajectory</li>
+            <li>✓ R key resets basketball to center court</li>
+            <li>✓ Basketball bounces realistically when hitting the ground</li>
+            <li>✓ Ball rotates correctly during movement and flight</li>
+            <li>✓ Successful shots are detected and score is updated</li>
+            <li>✓ Shot attempts and accuracy percentage are tracked</li>
+            <li>✓ UI displays all required information clearly</li>
+            <li>✓ All controls work as specified without errors</li>
+        </ul>
+    </div>
+
+</body>
+</html>
