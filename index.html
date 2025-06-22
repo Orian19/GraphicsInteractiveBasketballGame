@@ -1,15 +1,355 @@
 <!DOCTYPE html>
-<html>
-	<head>
+<html>	<head>
 		<meta charset="utf-8">
-		<title>HW5</title>
-		<style>
-			body { margin: 0; }
+		<title>HW6</title>		<style>
+			body { margin: 0; font-family: Arial, sans-serif; }
+
+			.stats-container {
+				position: fixed;
+				top: 20px;
+				right: 20px;
+				background-color: rgba(0, 0, 0, 0.7);
+				border: 2px solid #ffcc00;
+				border-radius: 6px;
+				color: white;
+				padding: 10px;
+				font-size: 15px;
+				z-index: 1000;
+				min-width: 180px;
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+			}
+
+			.stats-title {
+				font-size: 15px;
+				font-weight: bold;
+				margin-bottom: 8px;
+				text-align: center;
+				color: #ffcc00;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+			}
+
+			.stat-row {
+				display: flex;
+				justify-content: space-between;
+				margin: 3px 0;
+				font-size: 15px;
+			}
+
+			.stat-label {
+				color: #cccccc;
+				font-size: 16px;
+			}
+
+			.stat-value {
+				color: #ffffff;
+				font-size: 18px;
+			}
+
+			.shot-feedback {
+				position: fixed;
+				top: 175px;
+				right: 20px;
+				width: 180px;
+				padding: 10px;
+				text-align: center;
+				font-size: 14px;
+				font-weight: bold;
+				border-radius: 6px;
+				opacity: 0;
+				transition: opacity 0.3s ease;
+				border: 2px solid transparent;
+				background-color: rgba(0, 0, 0, 0.7);
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+				z-index: 1000;
+			}
+
+			.shot-feedback.made {
+				color: #00ff00;
+				background-color: rgba(0, 0, 0, 0.8);
+				border-color: #00ff00;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+			}
+			
+			.shot-feedback.missed {
+				color: #ff0000;
+				background-color: rgba(0, 0, 0, 0.8);
+				border-color: #ff0000;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+			}
+			
+			.shot-feedback.show {
+				opacity: 1;
+			}
+
+			.ui-container {
+				position: absolute;
+				font-family: 'Arial', sans-serif;
+				color: white;
+				padding: 15px;
+				border-radius: 8px;
+				background-color: rgba(0, 0, 0, 0.5);
+				backdrop-filter: blur(5px);
+				box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+				transition: all 0.3s ease;
+				z-index: 1000;
+			}
+			
+			.ui-container:hover {
+				background-color: rgba(0, 0, 0, 0.7);
+			}
+
+			.controls-container {
+				bottom: 20px;
+				left: 20px;
+				max-width: 300px;
+				max-height: 80vh;
+				overflow-y: auto;
+				scrollbar-width: thin;
+				scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+			}
+			
+			.controls-container::-webkit-scrollbar {
+				width: 6px;
+			}
+			
+			.controls-container::-webkit-scrollbar-thumb {
+				background-color: rgba(255, 255, 255, 0.3);
+				border-radius: 3px;
+			}
+			
+			.scoreboard-container {
+				top: 15px;
+				left: 50%;
+				transform: translateX(-50%);
+				text-align: center;
+				min-width: 260px;
+				background-color: rgba(0, 0, 0, 0.7);
+				border: 2px solid rgba(255, 204, 0, 0.8);
+				border-radius: 8px;
+				box-shadow: 0 0 12px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 204, 0, 0.1);
+				padding: 8px 15px;
+				backdrop-filter: blur(5px);
+				-webkit-backdrop-filter: blur(5px);
+			}
+			
+			.scoreboard-title {
+				font-size: 16px;
+				color: #FFCC00;
+				letter-spacing: 1px;
+				margin-bottom: 6px;
+				text-transform: uppercase;
+				border-bottom: 1px solid rgba(255, 204, 0, 0.7);
+				padding-bottom: 4px;
+				font-weight: bold;
+				text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+			}
+			
+			.team-score {
+				display: flex;
+				justify-content: space-around;
+				margin: 8px 0 5px;
+				padding: 8px 10px;
+				background-color: rgba(20, 20, 30, 0.75);
+				border-radius: 6px;
+				border: 1px solid rgba(255, 204, 0, 0.4);
+				font-weight: bold;
+				box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+				text-shadow: 0 1px 1px rgba(0, 0, 0, 1);
+				color: white;
+				font-size: 14px;
+			}
+			
+			.score-value {
+				font-size: 18px;
+				margin-left: 6px;
+				color: #FFCC00;
+				text-shadow: 0 0 3px rgba(255, 204, 0, 0.5), 1px 1px 1px rgba(0, 0, 0, 0.9);
+				background-color: rgba(0, 0, 0, 0.4);
+				padding: 2px 6px;
+				border-radius: 4px;
+				display: inline-block;
+			}
+			
+			h3 {
+				margin-top: 0;
+				margin-bottom: 10px;
+				color: #FFA500;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+			}
+			
+			h4 {
+				margin-top: 12px;
+				margin-bottom: 6px;
+				color: #FFC857;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+				font-size: 16px;
+			}
+			
+			.key-command {
+				background-color: #333;
+				padding: 2px 8px;
+				border-radius: 4px;
+				font-family: monospace;
+				margin: 0 3px;
+			}
+
+			.camera-status {
+				font-style: italic;
+				margin-top: 5px;
+				font-size: 14px;
+				color: #CCC;
+			}
+			
+			.key-feedback {
+				padding: 10px 16px;
+				font-size: 18px;
+				background-color: rgba(0, 0, 0, 0.7);
+				border: 2px solid #ffcc00;
+				border-radius: 6px;
+				opacity: 0;
+				transition: opacity 0.5s ease;
+				position: fixed;
+				bottom: 40px;
+				left: 50%;
+				transform: translateX(-50%);
+				z-index: 9999;
+				text-align: center;
+				min-width: 320px;
+				color: #ffcc00;
+				font-weight: bold;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+			}
+			
+			.power-container {
+				position: fixed;
+				bottom: 20px;
+				right: 20px;
+				background-color: rgba(0, 0, 0, 0.7);
+				border: 2px solid #ffcc00;
+				border-radius: 6px;
+				padding: 10px;
+				width: 200px;
+				z-index: 1000;
+				box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+			}
+			
+			.power-label {
+				color: #ffcc00;
+				font-weight: bold;
+				font-size: 16px;
+				margin-bottom: 5px;
+				text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+			}
+			
+			.power-bar-container {
+				width: 180px;
+				height: 20px;
+				background-color: rgba(255, 255, 255, 0.2);
+				border-radius: 10px;
+				overflow: hidden;
+				margin-bottom: 5px;
+				box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+			}
+			
+			.power-bar {
+				height: 100%;
+				width: 50%;
+				background: linear-gradient(to right, #00ff00, #ffff00, #ff0000);
+				transition: width 0.2s ease;
+				border-radius: 10px;
+			}
+			
+			.power-value {
+				color: white;
+				font-weight: bold;
+				font-size: 14px;
+			}
+			
+			@media (max-width: 768px) {
+				.ui-container {
+					padding: 10px;
+				}
+				.scoreboard-container {
+					max-width: 90%;
+				}
+			}
 		</style>
 		<script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
-	</head>
-	<body>
-		<script src="src/hw6.js" type="module"></script>
+	</head>	<body>
+		<div class="stats-container">
+			<div class="stats-title">📊 SHOT STATS</div>
+			<div class="stat-row">
+				<span class="stat-label">Attempts:</span>
+				<span class="stat-value" id="shot-attempts">0</span>
+			</div>
+			<div class="stat-row">
+				<span class="stat-label">Made:</span>
+				<span class="stat-value" id="shots-made">0</span>
+			</div>
+			<div class="stat-row">
+				<span class="stat-label">Total Points:</span>
+				<span class="stat-value" id="total-points">0</span>
+			</div>
+			<div class="stat-row">
+				<span class="stat-label">Accuracy:</span>
+				<span class="stat-value" id="shot-accuracy">0%</span>
+			</div>
+		</div>
+		
+		<div class="shot-feedback" id="shot-feedback"></div>
 
+		<div class="ui-container scoreboard-container">
+			<h3 class="scoreboard-title">SCOREBOARD</h3>
+			<div class="team-score">
+				<div>HOME <span class="score-value" id="home-score">0</span></div>
+				<div>AWAY <span class="score-value" id="away-score">0</span></div>
+			</div>
+		</div>
+
+		<div class="ui-container controls-container">
+			<h3>CONTROLS</h3>
+			<p><span class="key-command">O</span> Toggle orbit camera</p>
+			<p><span class="key-command">H</span> Toggle UI visibility</p>
+			<p><span class="key-command">R</span> Reset ball position & power</p>
+			
+			<h4>Camera Presets</h4>
+			<p><span class="key-command">1</span> Default view</p>
+			<p><span class="key-command">2</span> Side view</p>
+			<p><span class="key-command">3</span> Top-down view</p>
+			<p><span class="key-command">4</span> Centered view</p>
+			<p><span class="key-command">5</span> Right hoop view</p>
+			<p><span class="key-command">6</span> Left hoop view</p>
+			<p><span class="key-command">7</span> In front of right basket</p>
+			<p><span class="key-command">8</span> In front of left basket</p>
+			<p><span class="key-command">9</span> Bleachers view</p>
+			<p><span class="key-command">0</span> Scoreboard view</p>
+			
+			<h4>Ball Movement</h4>
+			<p><span class="key-command">←→</span> Move ball left/right</p>
+			<p><span class="key-command">↑↓</span> Move ball forward/backward</p>
+			
+			<h4>Shot Controls</h4>
+			<p><span class="key-command">W</span> Increase shot power</p>
+			<p><span class="key-command">S</span> Decrease shot power</p>
+			<p><span class="key-command">SPACE</span> Shoot ball</p>
+			
+			<div class="camera-status" id="camera-status">Camera Mode: Default | Orbit: Enabled</div>
+		</div>
+
+		<div id="key-feedback" class="key-feedback"></div>
+
+		<div class="power-container ui-container">
+			<div class="power-label">SHOT POWER</div>
+			<div class="power-bar-container">
+				<div class="power-bar" id="power-bar"></div>
+			</div>
+			<div class="power-value" id="power-value">50%</div>
+		</div>
+		
+		<script src="src/hw6.js" type="module"></script>
 	</body>
 </html>

@@ -47,12 +47,38 @@ const basketballMovement = {
         baseVelocity: 13.8,
         lastPosition: null, // for collision detection
         floorY: 0.35 + 0.1,
-        spinFactor: 0.05
+        spinFactor: 0.035
     }
 };
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// statistics settings
+const gameStats = {
+    shotAttempts: 0,
+    shotsMade: 0,
+    points: 0,
+    accuracy: 0,
+    lastShotResult: null, // made/missed/null
+    shotFeedbackTimer: null,
+    lastShotPosition: null // to track where the shot was taken from
+};
+
+let lastStatsValues = { attempts: -1, made: -1, accuracy: -1, points: -1 };
+
+
+// track time for physics calculations
+let lastTime = Date.now();
+
+const renderer = new THREE.WebGLRenderer({ 
+    antialias: true,
+    powerPreference: "high-performance",
+    stencil: false,
+    depth: true
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 // Set background color
 scene.background = new THREE.Color(0x000000);
@@ -1351,13 +1377,117 @@ function createScoreboard() {
     scene.add(scoreboardGroup);
 }
 
-// set camera position
-updateCameraStatusDisplay();
+function updateStatsUI() {
+    /*
+    update the statistics display in the UI
+    */
+    const attemptsElement = document.getElementById('shot-attempts');
+    const madeElement = document.getElementById('shots-made');
+    const accuracyElement = document.getElementById('shot-accuracy');
+    const pointsElement = document.getElementById('total-points');
+    
+    if (attemptsElement && gameStats.shotAttempts !== lastStatsValues.attempts) {
+        attemptsElement.textContent = gameStats.shotAttempts;
+        lastStatsValues.attempts = gameStats.shotAttempts;
+    }
+    
+    if (madeElement && gameStats.shotsMade !== lastStatsValues.made) {
+        madeElement.textContent = gameStats.shotsMade;
+        lastStatsValues.made = gameStats.shotsMade;
+    }
+    
+    if (accuracyElement) {
+        const newAccuracy = gameStats.shotAttempts > 0 ? 
+            Math.round((gameStats.shotsMade / gameStats.shotAttempts) * 100) : 0;
+        
+        if (newAccuracy !== lastStatsValues.accuracy) {
+            gameStats.accuracy = newAccuracy;
+            accuracyElement.textContent = gameStats.accuracy + '%';
+            lastStatsValues.accuracy = newAccuracy;
+        }
+    }
 
-// camera position presets
-setTimeout(() => {
-    setCameraPreset('default');
-}, 100);
+    if (pointsElement && gameStats.points !== lastStatsValues.points) {
+        pointsElement.textContent = gameStats.points;
+        lastStatsValues.points = gameStats.points;
+    }
+}
+
+function showShotFeedback(result, isThreePointer = false) {
+    /*
+    show visual feedback for shot result (made/missed)
+    */
+    const feedbackElement = document.getElementById('shot-feedback');
+    if (!feedbackElement) return;
+    
+    if (gameStats.shotFeedbackTimer) {
+        clearTimeout(gameStats.shotFeedbackTimer);
+    }
+    
+    // set feedback text and class
+    if (result === 'made') {
+        if (isThreePointer) {
+            feedbackElement.textContent = '🏀 3-POINTER!';
+        } else {
+            feedbackElement.textContent = '🏀 MADE!';
+        }
+        feedbackElement.className = 'shot-feedback made show';
+    } else if (result === 'missed') {
+        feedbackElement.textContent = '❌ MISSED';
+        feedbackElement.className = 'shot-feedback missed show';
+    }
+    
+    // hide feedback after 2 seconds
+    gameStats.shotFeedbackTimer = setTimeout(() => {
+        feedbackElement.className = 'shot-feedback';
+    }, 2000);
+}
+
+function isThreePointShot(shotPosition, basketPosition) {
+    /*
+    check if a shot was a 3-pointer
+    */
+    const threePointRadius = 6.75;
+    const distance = Math.sqrt(
+        Math.pow(shotPosition.x - basketPosition.x, 2) + 
+        Math.pow(shotPosition.z - basketPosition.z, 2)
+    );
+    return distance > threePointRadius;
+}
+
+function recordShotAttempt() {
+    /*
+    record a new shot attempt
+    */
+    gameStats.shotAttempts++;
+    updateStatsUI();
+}
+
+function recordShotMade(isThreePointer = false) {
+    /*
+    record a successful shot
+    */
+    gameStats.shotsMade++;
+    gameStats.lastShotResult = 'made';
+    
+    if (isThreePointer) {
+        gameStats.points += 3;
+    } else {
+        gameStats.points += 2;
+    }
+    
+    updateStatsUI();
+    showShotFeedback('made', isThreePointer);
+}
+
+function recordShotMissed() {
+    /*
+    record a missed shot
+    */
+    gameStats.lastShotResult = 'missed';
+    updateStatsUI();
+    showShotFeedback('missed');
+}
 
 const cameraPresets = {
     default: { position: new THREE.Vector3(0, 12, 20), lookAt: new THREE.Vector3(0, 2, 0) },
@@ -1389,6 +1519,14 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.copy(cameraPresets.default.lookAt);
 let isOrbitEnabled = true;
 let isUiVisible = true;
+
+// set camera position and update display
+updateCameraStatusDisplay();
+
+// camera position presets
+setTimeout(() => {
+    setCameraPreset('default');
+}, 100);
 
 function setCameraPreset(presetName) {
     /*
@@ -1464,276 +1602,6 @@ createBasketball();
 createBleachers();
 createScoreboard();
 
-// ========================
-// UI FRAMEWORK PREPARATION
-// ========================
-
-// create CSS style element
-const styleElement = document.createElement('style');
-styleElement.textContent = `
-  .ui-container {
-    position: absolute;
-    font-family: 'Arial', sans-serif;
-    color: white;
-    padding: 15px;
-    border-radius: 8px;
-    background-color: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(5px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
-    z-index: 1000;
-  }
-  
-  .ui-container:hover {
-    background-color: rgba(0, 0, 0, 0.7);
-  }
-    .controls-container {
-    bottom: 20px;
-    left: 20px;
-    max-width: 300px;
-    max-height: 80vh;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
-  }
-  
-  .controls-container::-webkit-scrollbar {
-    width: 6px;
-  }
-  
-  .controls-container::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.3);
-    border-radius: 3px;
-  }
-  
-  .scoreboard-container {
-    top: 15px;
-    left: 50%;
-    transform: translateX(-50%);
-    text-align: center;
-    min-width: 260px;
-    background-color: rgba(0, 0, 0, 0.7);
-    border: 2px solid rgba(255, 204, 0, 0.8);
-    border-radius: 8px;
-    box-shadow: 0 0 12px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 204, 0, 0.1);
-    padding: 8px 15px;
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
-  }
-  
-  .scoreboard-title {
-    font-size: 16px;
-    color: #FFCC00;
-    letter-spacing: 1px;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    border-bottom: 1px solid rgba(255, 204, 0, 0.7);
-    padding-bottom: 4px;
-    font-weight: bold;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-  }
-  
-  .team-score {
-    display: flex;
-    justify-content: space-around;
-    margin: 8px 0 5px;
-    padding: 8px 10px;
-    background-color: rgba(20, 20, 30, 0.75);
-    border-radius: 6px;
-    border: 1px solid rgba(255, 204, 0, 0.4);
-    font-weight: bold;
-    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 1);
-    color: white;
-    font-size: 14px;
-  }
-  
-  .score-value {
-    font-size: 18px;
-    margin-left: 6px;
-    color: #FFCC00;
-    text-shadow: 0 0 3px rgba(255, 204, 0, 0.5), 1px 1px 1px rgba(0, 0, 0, 0.9);
-    background-color: rgba(0, 0, 0, 0.4);
-    padding: 2px 6px;
-    border-radius: 4px;
-    display: inline-block;
-  }
-  
-  h3 {
-    margin-top: 0;
-    margin-bottom: 10px;
-    color: #FFA500;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  }
-  
-  h4 {
-    margin-top: 12px;
-    margin-bottom: 6px;
-    color: #FFC857;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-    font-size: 16px;
-  }
-  
-  .key-command {
-    background-color: #333;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-family: monospace;
-    margin: 0 3px;
-  }
-    .camera-status {
-    font-style: italic;
-    margin-top: 5px;
-    font-size: 14px;
-    color: #CCC;
-  }
-  
-  .key-feedback {
-    padding: 10px 16px;
-    font-size: 18px;
-    background-color: rgba(0, 0, 0, 0.7);
-    border: 2px solid #ffcc00;
-    border-radius: 6px;
-    opacity: 0;
-    transition: opacity 0.5s ease;
-    position: fixed;
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 9999;
-    text-align: center;
-    min-width: 320px;
-    color: #ffcc00;
-    font-weight: bold;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-  }
-  
-  .power-container {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: rgba(0, 0, 0, 0.7);
-    border: 2px solid #ffcc00;
-    border-radius: 6px;
-    padding: 10px;
-    width: 200px;
-    z-index: 1000;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .power-label {
-    color: #ffcc00;
-    font-weight: bold;
-    font-size: 16px;
-    margin-bottom: 5px;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
-  }
-  
-  .power-bar-container {
-    width: 180px;
-    height: 20px;
-    background-color: rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 5px;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
-  }
-  
-  .power-bar {
-    height: 100%;
-    width: 50%;
-    background: linear-gradient(to right, #00ff00, #ffff00, #ff0000);
-    transition: width 0.2s ease;
-    border-radius: 10px;
-  }
-  
-  .power-value {
-    color: white;
-    font-weight: bold;
-    font-size: 14px;
-  }
-  
-  @media (max-width: 768px) {
-    .ui-container {
-      padding: 10px;
-    }
-    .scoreboard-container {
-      max-width: 90%;
-    }
-  }
-`;
-document.head.appendChild(styleElement);
-
-// create scoreboard container
-const scoreboardContainer = document.createElement('div');
-scoreboardContainer.className = 'ui-container scoreboard-container';
-scoreboardContainer.innerHTML = `
-  <h3 class="scoreboard-title">SCOREBOARD</h3>
-  <div class="team-score">
-    <div>HOME <span class="score-value" id="home-score">0</span></div>
-    <div>AWAY <span class="score-value" id="away-score">0</span></div>
-  </div>
-`;
-document.body.appendChild(scoreboardContainer);
-
-// instructions display
-const instructionsContainer = document.createElement('div');
-instructionsContainer.className = 'ui-container controls-container';
-instructionsContainer.innerHTML = `
-  <h3>CONTROLS</h3>
-  <p><span class="key-command">O</span> Toggle orbit camera</p>
-  <p><span class="key-command">H</span> Toggle UI visibility</p>
-  <p><span class="key-command">R</span> Reset ball position & power</p>
-  
-  <h4>Camera Presets</h4>
-  <p><span class="key-command">1</span> Default view</p>
-  <p><span class="key-command">2</span> Side view</p>
-  <p><span class="key-command">3</span> Top-down view</p>
-  <p><span class="key-command">4</span> Centered view</p>
-  <p><span class="key-command">5</span> Right hoop view</p>
-  <p><span class="key-command">6</span> Left hoop view</p>
-  <p><span class="key-command">7</span> In front of right basket</p>
-  <p><span class="key-command">8</span> In front of left basket</p>
-  <p><span class="key-command">9</span> Bleachers view</p>
-  <p><span class="key-command">0</span> Scoreboard view</p>
-  
-  <h4>Ball Movement</h4>
-  <p><span class="key-command">A</span>/<span class="key-command">D</span> Move ball left/right</p>
-  <p><span class="key-command">←→</span> Move ball left/right</p>
-  <p><span class="key-command">↑↓</span> Move ball forward/backward</p>
-  
-  <h4>Shot Controls</h4>
-  <p><span class="key-command">W</span> Increase shot power</p>
-  <p><span class="key-command">S</span> Decrease shot power</p>
-  <p><span class="key-command">SPACE</span> Shoot ball</p>
-  <p><span class="key-command">R</span> Reset ball position & power</p>
-  
-  <div class="camera-status" id="camera-status">Camera Mode: Default | Orbit: Enabled</div>
-`;
-document.body.appendChild(instructionsContainer);
-
-// create feedback for all key presses (placeholder for future functionality) 
-const keyFeedbackElement = document.createElement('div');
-keyFeedbackElement.id = 'key-feedback';
-keyFeedbackElement.className = 'key-feedback';
-document.body.appendChild(keyFeedbackElement);
-
-// create power indicator
-const powerContainer = document.createElement('div');
-powerContainer.className = 'power-container ui-container';
-powerContainer.innerHTML = `
-  <div class="power-label">SHOT POWER</div>
-  <div class="power-bar-container">
-    <div class="power-bar" id="power-bar"></div>
-  </div>
-  <div class="power-value" id="power-value">50%</div>
-`;
-document.body.appendChild(powerContainer);
-
 function handleKeyDown(e) {
     /*
     handle keydown events for camera controls and game mechanics
@@ -1744,8 +1612,8 @@ function handleKeyDown(e) {
 
     let feedbackMessage = '';
 
-    // Register key press for movement controls
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "a", "A", "d", "D"].includes(e.key)) {
+    // register key press for movement controls
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         basketballMovement.keysPressed[e.key] = true;
     }
 
@@ -1765,7 +1633,7 @@ function handleKeyDown(e) {
         feedbackMessage = `Camera Orbit Mode: ${isOrbitEnabled ? 'Enabled' : 'Disabled'}`;
     }
 
-    // camera preset keys (1-6)
+    // camera preset keys (0-9)
     else if (e.key === "1") {
         setCameraPreset('default');
         feedbackMessage = `Camera Preset: Default View`;
@@ -1805,13 +1673,6 @@ function handleKeyDown(e) {
     else if (e.key === "0") {
         setCameraPreset('scoreboardView');
         feedbackMessage = `Camera Preset: Scoreboard View`;
-    }
-    // W/S keys for power adjustment already handled above
-    else if (e.key === "a" || e.key === "A") {
-        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (move ball left)`;
-    }
-    else if (e.key === "d" || e.key === "D") {
-        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (move ball right)`;
     }
     // arrow keys
     else if (e.key === "ArrowUp") {
@@ -1935,13 +1796,16 @@ function adjustShotPower(amount) {
 
 function resetBasketballPosition() {
     /*
-    reset the basketball position to its original state
+    reset the basketball position and orientation to its original state
     */
 
     if (window.basketballGroup) {
         const basketball = window.basketballGroup;
         const originalY = basketball.originalY !== undefined ? basketball.originalY : basketball.position.y;
         basketball.position.set(0, originalY, 0);
+
+        // reset ball orientation/rotation
+        basketball.rotation.set(0, 0, 0);
 
         // reset movement speed
         basketballMovement.currentSpeed.x = 0;
@@ -1952,13 +1816,6 @@ function resetBasketballPosition() {
         basketballMovement.shotPower.current = basketballMovement.shotPower.default;
         updatePowerUI();
     }
-}
-
-// UI update function for future game mechanics
-function updateUI() {
-    // this function will be expanded in HW06
-    // (currently a placeholder for the future)
-
 }
 
 // window resize for responsive UI
@@ -2136,6 +1993,15 @@ function shootBasketball() {
     const distanceToRight = ballPosition.distanceTo(rightBasketPosition);
     const targetBasket = distanceToLeft < distanceToRight ? leftBasketPosition : rightBasketPosition;
 
+    // Reset last shot result and record shot attempt for statistics
+    gameStats.lastShotResult = null;
+    gameStats.lastShotPosition = {
+        x: ballPosition.x,
+        z: ballPosition.z,
+        targetBasket: targetBasket
+    };
+    recordShotAttempt();
+
     // calculate direction vector to the target basket
     const direction = new THREE.Vector3();
     direction.subVectors(targetBasket, ballPosition).normalize();
@@ -2173,7 +2039,7 @@ function shootBasketball() {
         verticalAngle = Math.PI / 2.5 + (6 - distance) / 10;
     }
     else if (distance < 10) {
-=        verticalAngle = Math.PI / 3 + (10 - distance) / 20;
+        verticalAngle = Math.PI / 3 + (10 - distance) / 20;
     }
     else {
         verticalAngle = Math.PI / 4 + (distance / 40) * 0.5;
@@ -2238,10 +2104,18 @@ function updateShootingPhysics(deltaTime) {
         basketballMovement.shooting.velocity.z * basketballMovement.shooting.velocity.z
     );
 
-    // spin around axis perpendicular to movement direction
+    // consistent backspin rotation regardless of shot direction
     const spinFactor = basketballMovement.shooting.spinFactor;
-    basketball.rotation.x += basketballMovement.shooting.velocity.z * spinFactor;
-    basketball.rotation.z -= basketballMovement.shooting.velocity.x * spinFactor;
+    const horizontalSpeed = Math.sqrt(
+        basketballMovement.shooting.velocity.x * basketballMovement.shooting.velocity.x +
+        basketballMovement.shooting.velocity.z * basketballMovement.shooting.velocity.z
+    );
+    
+    // always apply backspin (backward rotation) proportional to horizontal speed
+    basketball.rotation.x -= horizontalSpeed * spinFactor; // negative = backspin
+    
+    // minimal side spin for natural ball movement
+    basketball.rotation.z += Math.abs(basketballMovement.shooting.velocity.x) * spinFactor * 0.2;
 
     // random rotation for realism
     basketball.rotation.y += (Math.random() - 0.5) * 0.02 * speed;
@@ -2250,6 +2124,11 @@ function updateShootingPhysics(deltaTime) {
     if (basketball.position.y < basketballMovement.shooting.floorY) {
         // ball hit the floor
         basketball.position.y = basketballMovement.shooting.floorY;
+
+        // Simple miss detection: if ball hits floor and no score yet, it's a miss
+        if (gameStats.lastShotResult === null) {
+            recordShotMissed(); // Just record the miss, don't stop motion
+        }
 
         // bounce with energy loss
         const bounceFactor = 0.6;
@@ -2287,6 +2166,7 @@ function updateShootingPhysics(deltaTime) {
         basketballMovement.shooting.velocity.z = -basketballMovement.shooting.velocity.z * 0.8;
     }
 
+    // Simple detection for basket scoring (could be enhanced further)
     checkForScoring(basketball.position);
 }
 
@@ -2300,32 +2180,42 @@ function checkForScoring(position) {
     const rightRimPosition = new THREE.Vector3(14.5, 6, 0);
     const rimRadius = 0.6;
     const scoringHeight = 6.0;
-    const scoringThreshold = 0.5;
-    const heightThreshold = 0.4;
+    const scoringThreshold = 0.4; // smaller threshold for clean shots only
+    const heightThreshold = 0.3;
 
-    // dheck if ball is passing through rim height
+    // check if ball is passing through rim height for clean shots
     if (Math.abs(position.y - scoringHeight) < heightThreshold) {
-        // dheck for left basket scoring
+        // check for left basket scoring (clean shot)
         const leftDistance = Math.sqrt(
             Math.pow(position.x - leftRimPosition.x, 2) +
             Math.pow(position.z - leftRimPosition.z, 2)
         );
 
         if (leftDistance < scoringThreshold) {
-            // ball went through the left basket
-            handleScore('away');
+            // clean shot through left basket - only score if not already scored
+            if (gameStats.lastShotResult === null) {
+                handleScore('away');
+                setTimeout(() => {
+                    resetBallPosition();
+                }, 1000);
+            }
             return;
         }
 
-        // dheck for right basket scoring
+        // check for right basket scoring (clean shot)
         const rightDistance = Math.sqrt(
             Math.pow(position.x - rightRimPosition.x, 2) +
             Math.pow(position.z - rightRimPosition.z, 2)
         );
 
         if (rightDistance < scoringThreshold) {
-            // ball went through the right basket
-            handleScore('home');
+            // clean shot through right basket - only score if not already scored
+            if (gameStats.lastShotResult === null) {
+                handleScore('home');
+                setTimeout(() => {
+                    resetBallPosition();
+                }, 1000);
+            }
             return;
         }
     }
@@ -2336,6 +2226,17 @@ function handleScore(team) {
     update the score when a basket is made
     */
 
+    // check if this was a 3-pointer
+    let isThreePointer = false;
+    if (gameStats.lastShotPosition && gameStats.lastShotPosition.targetBasket) {
+        isThreePointer = isThreePointShot(
+            gameStats.lastShotPosition, 
+            gameStats.lastShotPosition.targetBasket
+        );
+    }
+
+    recordShotMade(isThreePointer);
+
     const homeScoreElement = document.getElementById('home-score');
     const awayScoreElement = document.getElementById('away-score');
 
@@ -2344,15 +2245,18 @@ function handleScore(team) {
     let homeScore = parseInt(homeScoreElement.textContent);
     let awayScore = parseInt(awayScoreElement.textContent);
 
-    // increment the appropriate score
+    // decide points to add (2 or 3)
+    const pointsToAdd = isThreePointer ? 3 : 2;
+
+    // increment the relevant score
     if (team === 'home') {
-        homeScore += 2;  // a basket is worth 2 points
+        homeScore += pointsToAdd;
         homeScoreElement.textContent = homeScore;
 
         // show feedback
         const keyFeedback = document.getElementById('key-feedback');
         if (keyFeedback) {
-            keyFeedback.textContent = "SCORE! Home team +2 points!";
+            keyFeedback.textContent = `SCORE! Home team +${pointsToAdd} points!`;
             keyFeedback.style.opacity = '1';
             keyFeedback.style.color = '#00aaff'; // blue for home team
 
@@ -2360,15 +2264,14 @@ function handleScore(team) {
                 keyFeedback.style.opacity = '0';
             }, 3000);
         }
-
-    } else {
-        awayScore += 2;
+    } else if (team === 'away') {
+        awayScore += pointsToAdd;
         awayScoreElement.textContent = awayScore;
 
         // show feedback
         const keyFeedback = document.getElementById('key-feedback');
         if (keyFeedback) {
-            keyFeedback.textContent = "SCORE! Away team +2 points!";
+            keyFeedback.textContent = `SCORE! Away team +${pointsToAdd} points!`;
             keyFeedback.style.opacity = '1';
             keyFeedback.style.color = '#ff4400'; // red for away team
 
@@ -2384,14 +2287,6 @@ function handleScore(team) {
         window.scoreboardTexture.needsUpdate = true;
     }
 }
-
-// init UI components
-function initUI() {
-    updatePowerUI();
-}
-
-// track time for physics calculations
-let lastTime = Date.now();
 
 // Animation function
 function animate() {
@@ -2409,6 +2304,7 @@ function animate() {
         controls.update();
     }
 
+    // physics updates
     if (basketballMovement.shooting.active) {
         // if the ball is in air use shooting physics
         updateShootingPhysics(deltaTime);
@@ -2417,10 +2313,10 @@ function animate() {
         updateBasketballPosition();
     }
 
-    updateUI();
     renderer.render(scene, camera);
 }
 
-initUI();
+// init stats UI
+updateStatsUI();
 
 animate();
