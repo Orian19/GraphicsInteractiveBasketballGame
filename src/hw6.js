@@ -3,11 +3,17 @@ import { OrbitControls } from './OrbitControls.js'
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
+// court dims
 const courtWidth = 30;
 const courtHeight = courtWidth / 2; // 2:1 ratio
 const courtDepth = 0.1;
 
+// physics constants
+const GRAVITY = -9.2;  // gravity for gameplay (real gravity is around -9.8 m/s^2)
+const AIR_RESISTANCE = 0.018; // reduced air resistance for better shots
+
 const basketballMovement = {
+    // movement settings
     speed: 0.08, // base speed
     currentSpeed: { x: 0, z: 0 }, // current movement speed with momentum
     acceleration: 0.015,
@@ -15,12 +21,21 @@ const basketballMovement = {
     maxSpeed: 0.15,
     rotationFactor: 0.8,
     minRotation: 0.04,
-    keysPressed: {},       // tracking which keys are pressed
+    keysPressed: {}, // tracking which keys are pressed
     courtBounds: {
-        minX: - (courtWidth - 1),
-        maxX: courtWidth - 1,
-        minZ: - (courtHeight - 1),
-        maxZ: courtHeight - 1
+        minX: -(courtWidth / 2 - 0.5),
+        maxX: courtWidth / 2 - 0.5,
+        minZ: -(courtHeight / 2 - 0.5),
+        maxZ: courtHeight / 2 - 0.5
+    },
+    // shot power settings
+    shotPower: {
+        current: 50, // current power level (0-100)
+        min: 0,
+        max: 100,
+        step: 5,
+        default: 50
+    },
     }
 };
 
@@ -1582,6 +1597,54 @@ styleElement.textContent = `
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
   }
   
+  .power-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: rgba(0, 0, 0, 0.7);
+    border: 2px solid #ffcc00;
+    border-radius: 6px;
+    padding: 10px;
+    width: 200px;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .power-label {
+    color: #ffcc00;
+    font-weight: bold;
+    font-size: 16px;
+    margin-bottom: 5px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+  }
+  
+  .power-bar-container {
+    width: 180px;
+    height: 20px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 5px;
+    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+  }
+  
+  .power-bar {
+    height: 100%;
+    width: 50%;
+    background: linear-gradient(to right, #00ff00, #ffff00, #ff0000);
+    transition: width 0.2s ease;
+    border-radius: 10px;
+  }
+  
+  .power-value {
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+  }
+  
   @media (max-width: 768px) {
     .ui-container {
       padding: 10px;
@@ -1612,7 +1675,7 @@ instructionsContainer.innerHTML = `
   <h3>CONTROLS</h3>
   <p><span class="key-command">O</span> Toggle orbit camera</p>
   <p><span class="key-command">H</span> Toggle UI visibility</p>
-  <p><span class="key-command">R</span> Reset ball position</p>
+  <p><span class="key-command">R</span> Reset ball position & power</p>
   
   <h4>Camera Presets</h4>
   <p><span class="key-command">1</span> Default view</p>
@@ -1625,13 +1688,17 @@ instructionsContainer.innerHTML = `
   <p><span class="key-command">8</span> In front of left basket</p>
   <p><span class="key-command">9</span> Bleachers view</p>
   <p><span class="key-command">0</span> Scoreboard view</p>
-    <h4>Ball Controls</h4>
-  <p><span class="key-command">W</span>/<span class="key-command">S</span> Move ball forward/backward</p>
+  
+  <h4>Ball Movement</h4>
   <p><span class="key-command">A</span>/<span class="key-command">D</span> Move ball left/right</p>
-  <p><span class="key-command">↑↓</span> Move ball forward/backward</p>
   <p><span class="key-command">←→</span> Move ball left/right</p>
-  <p><span class="key-command">R</span> Reset ball position</p>
+  <p><span class="key-command">↑↓</span> Move ball forward/backward</p>
+  
+  <h4>Shot Controls</h4>
+  <p><span class="key-command">W</span> Increase shot power</p>
+  <p><span class="key-command">S</span> Decrease shot power</p>
   <p><span class="key-command">SPACE</span> Shoot ball (future)</p>
+  <p><span class="key-command">R</span> Reset ball position & power</p>
   
   <div class="camera-status" id="camera-status">Camera Mode: Default | Orbit: Enabled</div>
 `;
@@ -1642,6 +1709,18 @@ const keyFeedbackElement = document.createElement('div');
 keyFeedbackElement.id = 'key-feedback';
 keyFeedbackElement.className = 'key-feedback';
 document.body.appendChild(keyFeedbackElement);
+
+// create power indicator
+const powerContainer = document.createElement('div');
+powerContainer.className = 'power-container ui-container';
+powerContainer.innerHTML = `
+  <div class="power-label">SHOT POWER</div>
+  <div class="power-bar-container">
+    <div class="power-bar" id="power-bar"></div>
+  </div>
+  <div class="power-value" id="power-value">50%</div>
+`;
+document.body.appendChild(powerContainer);
 
 function handleKeyDown(e) {
     /*
@@ -1654,8 +1733,17 @@ function handleKeyDown(e) {
     let feedbackMessage = '';
 
     // Register key press for movement controls
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "W", "a", "A", "s", "S", "d", "D"].includes(e.key)) {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "a", "A", "d", "D"].includes(e.key)) {
         basketballMovement.keysPressed[e.key] = true;
+    }
+
+    // W/S for power adjustment
+    if (e.key === "w" || e.key === "W") {
+        adjustShotPower(basketballMovement.shotPower.step);
+        feedbackMessage = `Shot power increased: ${basketballMovement.shotPower.current}%`;
+    } else if (e.key === "s" || e.key === "S") {
+        adjustShotPower(-basketballMovement.shotPower.step);
+        feedbackMessage = `Shot power decreased: ${basketballMovement.shotPower.current}%`;
     }
 
     // Orbit camera toggle with O key
@@ -1706,14 +1794,7 @@ function handleKeyDown(e) {
         setCameraPreset('scoreboardView');
         feedbackMessage = `Camera Preset: Scoreboard View`;
     }
-
-    // W/S/A/D keys
-    else if (e.key === "w" || e.key === "W") {
-        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (move ball up)`;
-    }
-    else if (e.key === "s" || e.key === "S") {
-        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (move ball down)`;
-    }
+    // W/S keys for power adjustment already handled above
     else if (e.key === "a" || e.key === "A") {
         feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (move ball left)`;
     }
@@ -1736,10 +1817,9 @@ function handleKeyDown(e) {
     // space and R keys
     else if (e.key === " ") {
         feedbackMessage = `Key pressed: SPACE (shoot ball - will be implemented in future)`;
-    }
-    else if (e.key === "r" || e.key === "R") {
+    } else if (e.key === "r" || e.key === "R") {
         resetBasketballPosition();
-        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (ball position reset)`;
+        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (ball position and shot power reset)`;
     }
     // toggle UI visibility with H/h key
     else if (e.key === "h" || e.key === "H") {
@@ -1761,7 +1841,7 @@ function handleKeyDown(e) {
 
 function toggleUIVisibility() {
     /*
-    toggle the visibility of UI elements (scoreboard, controls)
+    toggle the visibility of UI elements (scoreboard, controls, power indicator)
     */
 
     isUiVisible = !isUiVisible;
@@ -1769,6 +1849,7 @@ function toggleUIVisibility() {
     // get UI elements
     const scoreboardContainer = document.querySelector('.scoreboard-container');
     const controlsContainer = document.querySelector('.controls-container');
+    const powerContainer = document.querySelector('.power-container');
 
     // set visibility
     if (isUiVisible) {
@@ -1776,11 +1857,15 @@ function toggleUIVisibility() {
         scoreboardContainer.style.visibility = 'visible';
         controlsContainer.style.opacity = '1';
         controlsContainer.style.visibility = 'visible';
+        powerContainer.style.opacity = '1';
+        powerContainer.style.visibility = 'visible';
     } else {
         scoreboardContainer.style.opacity = '0';
         scoreboardContainer.style.visibility = 'hidden';
         controlsContainer.style.opacity = '0';
         controlsContainer.style.visibility = 'hidden';
+        powerContainer.style.opacity = '0';
+        powerContainer.style.visibility = 'hidden';
     }
 
     const keyFeedback = document.getElementById('key-feedback');
@@ -1795,7 +1880,7 @@ document.addEventListener('keydown', handleKeyDown);
 // add keyup listener to track when keys are released
 function handleKeyUp(e) {
     // remove key from pressed keys when released
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "W", "a", "A", "s", "S", "d", "D"].includes(e.key)) {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "a", "A", "d", "D"].includes(e.key)) {
         delete basketballMovement.keysPressed[e.key];
     }
 }
@@ -1807,6 +1892,22 @@ function resetBasketballPosition() {
     reset the basketball position to its original state
     */
 
+function updatePowerUI() {
+    /*
+    update the power bar UI based on current shot power
+    */
+
+    const powerBar = document.getElementById('power-bar');
+    const powerValue = document.getElementById('power-value');
+
+    if (powerBar && powerValue) {
+        const percentage = basketballMovement.shotPower.current;
+        powerBar.style.width = `${percentage}%`;
+
+        // update the displayed power value
+        powerValue.textContent = `${percentage}%`;
+    }
+}
     if (window.basketballGroup) {
         const basketball = window.basketballGroup;
         const originalY = basketball.originalY !== undefined ? basketball.originalY : basketball.position.y;
@@ -1816,6 +1917,10 @@ function resetBasketballPosition() {
         basketballMovement.currentSpeed.x = 0;
         basketballMovement.currentSpeed.z = 0;
         basketball.bouncePhase = 0;
+
+        // reset shot power to default
+        basketballMovement.shotPower.current = basketballMovement.shotPower.default;
+        updatePowerUI();
     }
 }
 
@@ -1981,6 +2086,11 @@ function updateBasketballPosition() {
     }
 }
 
+// init UI components
+function initUI() {
+    updatePowerUI();
+}
+
 // Animation function
 function animate() {
     requestAnimationFrame(animate);
@@ -2001,5 +2111,7 @@ function animate() {
 
     renderer.render(scene, camera);
 }
+
+initUI();
 
 animate();
