@@ -2139,37 +2139,70 @@ function shootBasketball() {
     // calculate direction vector to the target basket
     const direction = new THREE.Vector3();
     direction.subVectors(targetBasket, ballPosition).normalize();
+    
+    // calculate optimal angle for the shot based on distance
+    const distance = ballPosition.distanceTo(targetBasket);
 
     // calculate power factor based on current power level (0-1)
-    const powerFactor = 0.45 + (basketballMovement.shotPower.current / 100) * 0.5;
+    let powerFactor = 0.45 + (basketballMovement.shotPower.current / 100) * 0.5;
+    
+    // for close shots
+    if (distance < 3) {
+        powerFactor = Math.max(powerFactor, 0.6);
+        
+        if (distance < 1.5) {
+            powerFactor = Math.max(powerFactor, 0.7);
+        }
+    }
 
     // set velocity based on direction and power
     const velocity = basketballMovement.shooting.baseVelocity * powerFactor;
 
-    // calculate optimal angle for the shot based on distance
-    const distance = ballPosition.distanceTo(targetBasket);
-
     // height diff between ball and basket
     const heightDiff = 6 - ballPosition.y;
 
-    // adjust angle based on distance and height difference
-    // (further shots need a higher arc to reach the basket)
-    let verticalAngle = Math.PI / 4 + (distance / 30) * 0.4;
-
-    // max angle (to prevent extremely high arcs)
-    verticalAngle = Math.min(verticalAngle, Math.PI / 2.8);
-
-    // for very close shots, use a higher arc
-    if (distance < 3) {
-        verticalAngle = Math.PI / 2.5;
+    let verticalAngle;
+    
+    if (distance < 1.5) {
+        verticalAngle = Math.PI / 1.7;
+    } 
+    else if (distance < 3) {
+        verticalAngle = Math.PI / 2.0; // high arc for close shots
+    }
+    else if (distance < 6) {
+        verticalAngle = Math.PI / 2.5 + (6 - distance) / 10;
+    }
+    else if (distance < 10) {
+=        verticalAngle = Math.PI / 3 + (10 - distance) / 20;
+    }
+    else {
+        verticalAngle = Math.PI / 4 + (distance / 40) * 0.5;
+        verticalAngle = Math.min(verticalAngle, Math.PI / 2.8);
     }
 
     // set initial velocities
     basketballMovement.shooting.velocity.x = direction.x * velocity * Math.cos(verticalAngle);
     basketballMovement.shooting.velocity.z = direction.z * velocity * Math.cos(verticalAngle);
     basketballMovement.shooting.velocity.y = velocity * Math.sin(verticalAngle);
-
-    basketballMovement.shooting.velocity.y += heightDiff * 0.35;
+    
+    let verticalBoostFactor;
+    
+    if (distance < 1.5) {
+        verticalBoostFactor = 0.6;
+    } 
+    else if (distance < 3) {
+        verticalBoostFactor = 0.5;
+    }
+    else if (distance < 6) {
+        verticalBoostFactor = 0.4;
+    }
+    else {
+        verticalBoostFactor = 0.35;
+    }
+    
+    const verticalBoost = heightDiff * verticalBoostFactor;
+    
+    basketballMovement.shooting.velocity.y += verticalBoost;
     // store the last position for collision detection
     basketballMovement.shooting.lastPosition = basketball.position.clone();
 }
@@ -2254,9 +2287,104 @@ function updateShootingPhysics(deltaTime) {
         basketballMovement.shooting.velocity.z = -basketballMovement.shooting.velocity.z * 0.8;
     }
 
-    // Simple detection for basket scoring (could be enhanced further)
     checkForScoring(basketball.position);
 }
+
+function checkForScoring(position) {
+    /*
+    check if the basketball went through either hoop
+    */
+
+    // define basket rim positions and scoring conditions
+    const leftRimPosition = new THREE.Vector3(-14.5, 6, 0);
+    const rightRimPosition = new THREE.Vector3(14.5, 6, 0);
+    const rimRadius = 0.6;
+    const scoringHeight = 6.0;
+    const scoringThreshold = 0.5;
+    const heightThreshold = 0.4;
+
+    // dheck if ball is passing through rim height
+    if (Math.abs(position.y - scoringHeight) < heightThreshold) {
+        // dheck for left basket scoring
+        const leftDistance = Math.sqrt(
+            Math.pow(position.x - leftRimPosition.x, 2) +
+            Math.pow(position.z - leftRimPosition.z, 2)
+        );
+
+        if (leftDistance < scoringThreshold) {
+            // ball went through the left basket
+            handleScore('away');
+            return;
+        }
+
+        // dheck for right basket scoring
+        const rightDistance = Math.sqrt(
+            Math.pow(position.x - rightRimPosition.x, 2) +
+            Math.pow(position.z - rightRimPosition.z, 2)
+        );
+
+        if (rightDistance < scoringThreshold) {
+            // ball went through the right basket
+            handleScore('home');
+            return;
+        }
+    }
+}
+
+function handleScore(team) {
+    /*
+    update the score when a basket is made
+    */
+
+    const homeScoreElement = document.getElementById('home-score');
+    const awayScoreElement = document.getElementById('away-score');
+
+    if (!homeScoreElement || !awayScoreElement) return;
+
+    let homeScore = parseInt(homeScoreElement.textContent);
+    let awayScore = parseInt(awayScoreElement.textContent);
+
+    // increment the appropriate score
+    if (team === 'home') {
+        homeScore += 2;  // a basket is worth 2 points
+        homeScoreElement.textContent = homeScore;
+
+        // show feedback
+        const keyFeedback = document.getElementById('key-feedback');
+        if (keyFeedback) {
+            keyFeedback.textContent = "SCORE! Home team +2 points!";
+            keyFeedback.style.opacity = '1';
+            keyFeedback.style.color = '#00aaff'; // blue for home team
+
+            setTimeout(() => {
+                keyFeedback.style.opacity = '0';
+            }, 3000);
+        }
+
+    } else {
+        awayScore += 2;
+        awayScoreElement.textContent = awayScore;
+
+        // show feedback
+        const keyFeedback = document.getElementById('key-feedback');
+        if (keyFeedback) {
+            keyFeedback.textContent = "SCORE! Away team +2 points!";
+            keyFeedback.style.opacity = '1';
+            keyFeedback.style.color = '#ff4400'; // red for away team
+
+            setTimeout(() => {
+                keyFeedback.style.opacity = '0';
+            }, 3000);
+        }
+    }
+
+    // update the scoreboard display 
+    if (window.updateScoreboardDisplay && window.scoreboardTexture) {
+        window.updateScoreboardDisplay(homeScore, awayScore);
+        window.scoreboardTexture.needsUpdate = true;
+    }
+}
+
 // init UI components
 function initUI() {
     updatePowerUI();
