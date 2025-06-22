@@ -36,6 +36,18 @@ const basketballMovement = {
         step: 5,
         default: 50
     },
+    // shooting mechanics settings
+    shooting: {
+        active: false, // is the ball in the air
+        velocity: {
+            x: 0,
+            y: 0,
+            z: 0
+        },
+        baseVelocity: 13.8,
+        lastPosition: null, // for collision detection
+        floorY: 0.35 + 0.1,
+        spinFactor: 0.05
     }
 };
 
@@ -1697,7 +1709,7 @@ instructionsContainer.innerHTML = `
   <h4>Shot Controls</h4>
   <p><span class="key-command">W</span> Increase shot power</p>
   <p><span class="key-command">S</span> Decrease shot power</p>
-  <p><span class="key-command">SPACE</span> Shoot ball (future)</p>
+  <p><span class="key-command">SPACE</span> Shoot ball</p>
   <p><span class="key-command">R</span> Reset ball position & power</p>
   
   <div class="camera-status" id="camera-status">Camera Mode: Default | Orbit: Enabled</div>
@@ -1816,7 +1828,13 @@ function handleKeyDown(e) {
     }
     // space and R keys
     else if (e.key === " ") {
-        feedbackMessage = `Key pressed: SPACE (shoot ball - will be implemented in future)`;
+        // (allow shooting if the ball is not already in air)
+        if (!basketballMovement.shooting.active) {
+            shootBasketball();
+            feedbackMessage = `Shot taken with power: ${basketballMovement.shotPower.current}%`;
+        } else {
+            feedbackMessage = `Ball is already in air!`;
+        }
     } else if (e.key === "r" || e.key === "R") {
         resetBasketballPosition();
         feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (ball position and shot power reset)`;
@@ -1857,15 +1875,11 @@ function toggleUIVisibility() {
         scoreboardContainer.style.visibility = 'visible';
         controlsContainer.style.opacity = '1';
         controlsContainer.style.visibility = 'visible';
-        powerContainer.style.opacity = '1';
-        powerContainer.style.visibility = 'visible';
     } else {
         scoreboardContainer.style.opacity = '0';
         scoreboardContainer.style.visibility = 'hidden';
         controlsContainer.style.opacity = '0';
         controlsContainer.style.visibility = 'hidden';
-        powerContainer.style.opacity = '0';
-        powerContainer.style.visibility = 'hidden';
     }
 
     const keyFeedback = document.getElementById('key-feedback');
@@ -1887,11 +1901,6 @@ function handleKeyUp(e) {
 
 document.addEventListener('keyup', handleKeyUp);
 
-function resetBasketballPosition() {
-    /*
-    reset the basketball position to its original state
-    */
-
 function updatePowerUI() {
     /*
     update the power bar UI based on current shot power
@@ -1908,6 +1917,27 @@ function updatePowerUI() {
         powerValue.textContent = `${percentage}%`;
     }
 }
+
+function adjustShotPower(amount) {
+    /*
+    adjust the shot power by the specified amount
+    */
+
+    // update power level with limits
+    basketballMovement.shotPower.current = Math.min(
+        Math.max(basketballMovement.shotPower.current + amount, basketballMovement.shotPower.min),
+        basketballMovement.shotPower.max
+    );
+
+    // update UI
+    updatePowerUI();
+}
+
+function resetBasketballPosition() {
+    /*
+    reset the basketball position to its original state
+    */
+
     if (window.basketballGroup) {
         const basketball = window.basketballGroup;
         const originalY = basketball.originalY !== undefined ? basketball.originalY : basketball.position.y;
@@ -2086,16 +2116,164 @@ function updateBasketballPosition() {
     }
 }
 
+function shootBasketball() {
+    /*
+    shoot the basketball based on the current power level
+    */
+
+    if (!window.basketballGroup) return;
+
+    const basketball = window.basketballGroup;
+    basketballMovement.shooting.active = true;
+
+    // calculate shooting direction - aim towards the closest basket
+    const ballPosition = basketball.position;
+    const leftBasketPosition = new THREE.Vector3(-courtWidth/2, 6, 0);  // left basket
+    const rightBasketPosition = new THREE.Vector3(courtWidth/2, 6, 0);  // right basket
+
+    // determine which basket is closer
+    const distanceToLeft = ballPosition.distanceTo(leftBasketPosition);
+    const distanceToRight = ballPosition.distanceTo(rightBasketPosition);
+    const targetBasket = distanceToLeft < distanceToRight ? leftBasketPosition : rightBasketPosition;
+
+    // calculate direction vector to the target basket
+    const direction = new THREE.Vector3();
+    direction.subVectors(targetBasket, ballPosition).normalize();
+
+    // calculate power factor based on current power level (0-1)
+    const powerFactor = 0.45 + (basketballMovement.shotPower.current / 100) * 0.5;
+
+    // set velocity based on direction and power
+    const velocity = basketballMovement.shooting.baseVelocity * powerFactor;
+
+    // calculate optimal angle for the shot based on distance
+    const distance = ballPosition.distanceTo(targetBasket);
+
+    // height diff between ball and basket
+    const heightDiff = 6 - ballPosition.y;
+
+    // adjust angle based on distance and height difference
+    // (further shots need a higher arc to reach the basket)
+    let verticalAngle = Math.PI / 4 + (distance / 30) * 0.4;
+
+    // max angle (to prevent extremely high arcs)
+    verticalAngle = Math.min(verticalAngle, Math.PI / 2.8);
+
+    // for very close shots, use a higher arc
+    if (distance < 3) {
+        verticalAngle = Math.PI / 2.5;
+    }
+
+    // set initial velocities
+    basketballMovement.shooting.velocity.x = direction.x * velocity * Math.cos(verticalAngle);
+    basketballMovement.shooting.velocity.z = direction.z * velocity * Math.cos(verticalAngle);
+    basketballMovement.shooting.velocity.y = velocity * Math.sin(verticalAngle);
+
+    basketballMovement.shooting.velocity.y += heightDiff * 0.35;
+    // store the last position for collision detection
+    basketballMovement.shooting.lastPosition = basketball.position.clone();
+}
+
+function updateShootingPhysics(deltaTime) {
+    /*
+    update the physics of a basketball in air
+    */
+
+    if (!window.basketballGroup || !basketballMovement.shooting.active) return;
+
+    const basketball = window.basketballGroup;
+
+    // store last position for collision detection
+    basketballMovement.shooting.lastPosition = basketball.position.clone();
+
+    basketballMovement.shooting.velocity.y += GRAVITY * deltaTime;
+
+    // apply air resistance (slowing the ball down slightly)
+    basketballMovement.shooting.velocity.x *= (1 - AIR_RESISTANCE * deltaTime);
+    basketballMovement.shooting.velocity.y *= (1 - AIR_RESISTANCE * deltaTime);
+    basketballMovement.shooting.velocity.z *= (1 - AIR_RESISTANCE * deltaTime);
+
+    // move the ball based on velocity
+    basketball.position.x += basketballMovement.shooting.velocity.x * deltaTime;
+    basketball.position.y += basketballMovement.shooting.velocity.y * deltaTime;
+    basketball.position.z += basketballMovement.shooting.velocity.z * deltaTime;
+
+    // rotate the ball for visual effect (more spin with higher velocity)
+    const speed = Math.sqrt(
+        basketballMovement.shooting.velocity.x * basketballMovement.shooting.velocity.x +
+        basketballMovement.shooting.velocity.y * basketballMovement.shooting.velocity.y +
+        basketballMovement.shooting.velocity.z * basketballMovement.shooting.velocity.z
+    );
+
+    // spin around axis perpendicular to movement direction
+    const spinFactor = basketballMovement.shooting.spinFactor;
+    basketball.rotation.x += basketballMovement.shooting.velocity.z * spinFactor;
+    basketball.rotation.z -= basketballMovement.shooting.velocity.x * spinFactor;
+
+    // random rotation for realism
+    basketball.rotation.y += (Math.random() - 0.5) * 0.02 * speed;
+
+    // detect collisions with the floor
+    if (basketball.position.y < basketballMovement.shooting.floorY) {
+        // ball hit the floor
+        basketball.position.y = basketballMovement.shooting.floorY;
+
+        // bounce with energy loss
+        const bounceFactor = 0.6;
+        basketballMovement.shooting.velocity.y = -basketballMovement.shooting.velocity.y * bounceFactor;
+
+        // reduce horizontal velocity due to friction with floor
+        const frictionFactor = 0.9;
+        basketballMovement.shooting.velocity.x *= frictionFactor;
+        basketballMovement.shooting.velocity.z *= frictionFactor;
+
+        // if the ball is moving very slowly after a bounce, end the shot
+        if (Math.abs(basketballMovement.shooting.velocity.y) < 0.5) {
+            if (speed < 0.5) {
+                basketballMovement.shooting.active = false;
+                basketballMovement.currentSpeed.x = 0;
+                basketballMovement.currentSpeed.z = 0;
+            }
+        }
+    }
+
+    // detect collision with court boundaries
+    if (basketball.position.x < basketballMovement.courtBounds.minX) {
+        basketball.position.x = basketballMovement.courtBounds.minX;
+        basketballMovement.shooting.velocity.x = -basketballMovement.shooting.velocity.x * 0.8;
+    } else if (basketball.position.x > basketballMovement.courtBounds.maxX) {
+        basketball.position.x = basketballMovement.courtBounds.maxX;
+        basketballMovement.shooting.velocity.x = -basketballMovement.shooting.velocity.x * 0.8;
+    }
+
+    if (basketball.position.z < basketballMovement.courtBounds.minZ) {
+        basketball.position.z = basketballMovement.courtBounds.minZ;
+        basketballMovement.shooting.velocity.z = -basketballMovement.shooting.velocity.z * 0.8;
+    } else if (basketball.position.z > basketballMovement.courtBounds.maxZ) {
+        basketball.position.z = basketballMovement.courtBounds.maxZ;
+        basketballMovement.shooting.velocity.z = -basketballMovement.shooting.velocity.z * 0.8;
+    }
+
+    // Simple detection for basket scoring (could be enhanced further)
+    checkForScoring(basketball.position);
+}
 // init UI components
 function initUI() {
     updatePowerUI();
 }
 
+// track time for physics calculations
+let lastTime = Date.now();
+
 // Animation function
 function animate() {
     requestAnimationFrame(animate);
 
-    // Update controls
+    // calculate time diff for physics updates
+    const currentTime = Date.now();
+    const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.1);
+    lastTime = currentTime;
+
     controls.enabled = isOrbitEnabled;
 
     // only update controls if orbit is enabled
@@ -2103,12 +2281,15 @@ function animate() {
         controls.update();
     }
 
-    // update basketball position based on key input
-    updateBasketballPosition();
+    if (basketballMovement.shooting.active) {
+        // if the ball is in air use shooting physics
+        updateShootingPhysics(deltaTime);
+    } else {
+        // otherwise use normal movement controls
+        updateBasketballPosition();
+    }
 
-    // update UI elements (will be expanded in HW06)
     updateUI();
-
     renderer.render(scene, camera);
 }
 
