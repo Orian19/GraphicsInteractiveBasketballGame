@@ -362,7 +362,7 @@
 			</div>
 			<div class="power-value" id="power-value">50%</div>
 		</div>
-				<div id="game-message" style="
+		<div id="game-message" style="
 			position: fixed;
 			top: 50%;
 			left: 50%;
@@ -379,6 +379,58 @@
 			border: 2px solid #ff4444;
 			box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
 		"></div>
+
+		<div id="challenge-results-overlay" style="
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0, 0, 0, 0.8);
+			z-index: 10000;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			opacity: 0;
+			transition: opacity 0.5s ease;
+			pointer-events: none;
+		">
+			<div id="challenge-results-content" style="
+				background-color: rgba(20, 20, 20, 0.95);
+				border: 3px solid #ffcc00;
+				border-radius: 15px;
+				padding: 30px;
+				text-align: center;
+				color: white;
+				font-family: Arial, sans-serif;
+				max-width: 500px;
+				box-shadow: 0 0 30px rgba(255, 204, 0, 0.5);
+				transform: scale(0.8);
+				transition: transform 0.5s ease;
+			">
+				<h2 id="challenge-title" style="color: #ffcc00; margin: 0 0 20px 0; font-size: 28px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">
+					🏀 Challenge Complete!
+				</h2>
+				<div style="font-size: 18px; margin-bottom: 15px;">
+					<div style="margin: 10px 0;">
+						<span style="color: #aaaaaa;">Final Score:</span>
+						<span id="challenge-score" style="color: #00ff00; font-weight: bold; font-size: 24px; margin-left: 10px;">0</span>
+						<span id="challenge-new-best" style="color: #ffaa00; font-weight: bold; margin-left: 10px; display: none;">🏆 NEW BEST!</span>
+					</div>
+					<div style="margin: 10px 0;">
+						<span style="color: #aaaaaa;">Shots Made:</span>
+						<span id="challenge-shots" style="color: #ffffff; font-weight: bold; margin-left: 10px;">0 / 0</span>
+					</div>
+					<div style="margin: 10px 0;">
+						<span style="color: #aaaaaa;">Accuracy:</span>
+						<span id="challenge-accuracy" style="color: #ffffff; font-weight: bold; margin-left: 10px;">0%</span>
+					</div>
+				</div>
+				<div style="font-size: 16px; color: #cccccc; margin-top: 20px;">
+					Returning to Free Shoot mode...
+				</div>
+			</div>
+		</div>
 
 		<script src="src/hw6.js" type="module"></script>
 	</body>

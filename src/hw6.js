@@ -1,9 +1,16 @@
 import { OrbitControls } from './OrbitControls.js'
 
+// ===================
+// CORE THREE.JS SETUP
+// ===================
+
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-// court dims
+// ===========================
+// CONSTANTS AND CONFIGURATION
+// ===========================
+
 const courtWidth = 30;
 const courtHeight = courtWidth / 2; // 2:1 ratio
 const courtDepth = 0.1;
@@ -12,13 +19,16 @@ const courtDepth = 0.1;
 const GRAVITY = -9.8;  // gravity on earth is around -9.8 m/s^2
 const AIR_RESISTANCE = 0.018; // reduced air resistance for better shots
 
+// ========================================
+// BASKETBALL MOVEMENT AND PHYSICS SETTINGS
+// ========================================
 const basketballMovement = {
     // movement settings
-    speed: 0.08, // base speed
-    currentSpeed: { x: 0, z: 0 }, // current movement speed with momentum
-    acceleration: 0.015,
+    speed: 0.10,
+    currentSpeed: { x: 0, z: 0 },
+    acceleration: 0.017,
     deceleration: 0.03,
-    maxSpeed: 0.15,
+    maxSpeed: 0.18,
     rotationFactor: 0.8,
     minRotation: 0.04,
     keysPressed: {}, // tracking which keys are pressed
@@ -51,7 +61,9 @@ const basketballMovement = {
     }
 };
 
-// statistics settings
+// =========================
+// GAME STATE AND STATISTICS
+// =========================
 const gameStats = {
     shotAttempts: 0,
     shotsMade: 0,
@@ -73,6 +85,10 @@ window.ballPositionHistory = [];
 // track time for physics calculations
 let lastTime = Date.now();
 
+// ==============
+// RENDERER SETUP
+// ==============
+
 const renderer = new THREE.WebGLRenderer({ 
     antialias: true,
     powerPreference: "high-performance",
@@ -87,6 +103,10 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 // Set background color
 scene.background = new THREE.Color(0x000000);
+
+// ==============
+// LIGHTING SETUP
+// ==============
 
 // Add lights to the scene
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -123,7 +143,9 @@ const rightBasketLight = createBasketLight(courtWidth / 2, 12, 3, courtWidth / 2
 renderer.shadowMap.enabled = true;
 directionalLight.castShadow = true;
 
-// material helper functions
+// ==============================
+// MATERIALS AND HELPER FUNCTIONS
+// ==============================
 
 function createStandardMaterial(color, options = {}) {
     /*
@@ -143,7 +165,10 @@ function degrees_to_radians(degrees) {
     return degrees * (pi / 180);
 }
 
-// Create basketball court
+// ==============
+// COURT CREATION
+// ==============
+
 function createBasketballCourt() {
     // create a parquet floor texture for the court
     const canvas = document.createElement('canvas');
@@ -1090,9 +1115,10 @@ function createSupportStructure(x, z, rimHeight, backboardHeight, backboardWidth
     scene.add(supportGroup);
 }
 
-// =================
-// STATIC BASKETBALL
-// =================
+
+// ===================
+// BASKETBALL CREATION
+// ===================
 
 function createBasketball() {
     /*
@@ -1252,9 +1278,9 @@ function createBasketballSeams(basketballGroup, radius) {
     });
 }
 
-// ======
-// BONOUS
-// ======
+// ==========================================
+// ARENA ENVIRONMENT (BLEACHERS & SCOREBOARD)
+// ==========================================
 
 function createBleachers() {
     /*
@@ -1524,6 +1550,10 @@ function createScoreboard() {
     scoreboardGroup.position.set(0, scoreboardY, 0);
     scene.add(scoreboardGroup);
 }
+
+// =======================
+// UI UPDATES AND FEEDBACK
+// =======================
 
 function updateStatsUI() {
     /*
@@ -2026,6 +2056,10 @@ function resetGameStats() {
     }
 }
 
+// ====================
+// GAME MODE MANAGEMENT
+// ====================
+
 function updateGameModeUI() {
     /*
     update the game mode display in the UI
@@ -2079,6 +2113,10 @@ createBasketballHoops();
 createBasketball();
 createBleachers();
 createScoreboard();
+
+// ===========================
+// INPUT HANDLING AND CONTROLS
+// ===========================
 
 function handleKeyDown(e) {
     /*
@@ -2263,6 +2301,10 @@ function toggleUIVisibility() {
         keyFeedback.style.visibility = 'visible';
     }
 }
+
+// ===============
+// EVENT LISTENERS
+// ===============
 
 // add keyboard event listener
 document.addEventListener('keydown', handleKeyDown);
@@ -2659,6 +2701,10 @@ function shootBasketball() {
     basketballMovement.shooting.lastPosition = basketball.position.clone();
 }
 
+// ==============================
+// PHYSICS AND COLLISION HANDLING
+// ==============================
+
 function updateShootingPhysics(deltaTime) {
     /*
     update the physics of a basketball in air
@@ -3002,82 +3048,49 @@ function handleScore(team) {
 
 function showTimedChallengeResults(modeName, finalScore, shotsMade, shotAttempts, accuracy, isNewBest) {
     /*
-    show timed challenge results in center screen
+    show timed challenge results in center screen using the pre-defined HTML elements
     */
     
-    // create results overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'challenge-results-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-    overlay.style.zIndex = '10000';
-    overlay.style.display = 'flex';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.opacity = '0';
-    overlay.style.transition = 'opacity 0.5s ease';
+    // Get the existing overlay and content elements
+    const overlay = document.getElementById('challenge-results-overlay');
+    const content = document.getElementById('challenge-results-content');
+    const titleElement = document.getElementById('challenge-title');
+    const scoreElement = document.getElementById('challenge-score');
+    const newBestElement = document.getElementById('challenge-new-best');
+    const shotsElement = document.getElementById('challenge-shots');
+    const accuracyElement = document.getElementById('challenge-accuracy');
     
-    // create results content
-    const content = document.createElement('div');
-    content.style.backgroundColor = 'rgba(20, 20, 20, 0.95)';
-    content.style.border = '3px solid #ffcc00';
-    content.style.borderRadius = '15px';
-    content.style.padding = '30px';
-    content.style.textAlign = 'center';
-    content.style.color = 'white';
-    content.style.fontFamily = 'Arial, sans-serif';
-    content.style.maxWidth = '500px';
-    content.style.boxShadow = '0 0 30px rgba(255, 204, 0, 0.5)';
-    content.style.transform = 'scale(0.8)';
-    content.style.transition = 'transform 0.5s ease';
+    // Update the content with the provided data
+    titleElement.textContent = `🏀 ${modeName} Complete!`;
+    scoreElement.textContent = finalScore;
+    shotsElement.textContent = `${shotsMade} / ${shotAttempts}`;
+    accuracyElement.textContent = `${accuracy}%`;
     
-    // create content HTML
-    content.innerHTML = `
-        <h2 style="color: #ffcc00; margin: 0 0 20px 0; font-size: 28px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">
-            🏀 ${modeName} Complete!
-        </h2>
-        <div style="font-size: 18px; margin-bottom: 15px;">
-            <div style="margin: 10px 0;">
-                <span style="color: #aaaaaa;">Final Score:</span>
-                <span style="color: #00ff00; font-weight: bold; font-size: 24px; margin-left: 10px;">${finalScore}</span>
-                ${isNewBest ? '<span style="color: #ffaa00; font-weight: bold; margin-left: 10px;">🏆 NEW BEST!</span>' : ''}
-            </div>
-            <div style="margin: 10px 0;">
-                <span style="color: #aaaaaa;">Shots Made:</span>
-                <span style="color: #ffffff; font-weight: bold; margin-left: 10px;">${shotsMade} / ${shotAttempts}</span>
-            </div>
-            <div style="margin: 10px 0;">
-                <span style="color: #aaaaaa;">Accuracy:</span>
-                <span style="color: #ffffff; font-weight: bold; margin-left: 10px;">${accuracy}%</span>
-            </div>
-        </div>
-        <div style="font-size: 16px; color: #cccccc; margin-top: 20px;">
-            Returning to Free Shoot mode...
-        </div>
-    `;
+    // Show/hide the "NEW BEST!" indicator based on isNewBest
+    if (isNewBest) {
+        newBestElement.style.display = 'inline';
+    } else {
+        newBestElement.style.display = 'none';
+    }
     
-    overlay.appendChild(content);
-    document.body.appendChild(overlay);
+    // Make sure the overlay is visible and interactive
+    overlay.style.pointerEvents = 'auto';
     
-    // animate in
+    // Animate in
     setTimeout(() => {
         overlay.style.opacity = '1';
         content.style.transform = 'scale(1)';
     }, 100);
     
-    // remove after delay
+    // Hide after delay
     setTimeout(() => {
         overlay.style.opacity = '0';
         content.style.transform = 'scale(0.8)';
         
         setTimeout(() => {
-            if (overlay.parentNode) {
-                overlay.parentNode.removeChild(overlay);
-            }
+            // Make the overlay non-interactive again when hidden
+            overlay.style.pointerEvents = 'none';
+        
         }, 500);
     }, 5500);
 }
@@ -3098,7 +3111,10 @@ function resetGameMode() {
     updateTimerUI();
 }
 
-// Animation function
+// ============================
+// ANIMATION AND RENDERING LOOP
+// ============================
+
 function animate() {
     requestAnimationFrame(animate);
 
@@ -3125,6 +3141,10 @@ function animate() {
 
     renderer.render(scene, camera);
 }
+
+// ==============
+// INITIALIZATION
+// ==============
 
 // init stats UI and game mode
 updateStatsUI();
