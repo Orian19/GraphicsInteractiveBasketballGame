@@ -9,7 +9,7 @@ const courtHeight = courtWidth / 2; // 2:1 ratio
 const courtDepth = 0.1;
 
 // physics constants
-const GRAVITY = -9.2;  // gravity for gameplay (real gravity is around -9.8 m/s^2)
+const GRAVITY = -9.8;  // gravity on earth is around -9.8 m/s^2
 const AIR_RESISTANCE = 0.018; // reduced air resistance for better shots
 
 const basketballMovement = {
@@ -64,6 +64,11 @@ const gameStats = {
 
 let lastStatsValues = { attempts: -1, made: -1, accuracy: -1, points: -1 };
 
+// init global tracking variables for shot detection
+window.ballPendingScorekeeperDecision = false;
+window.shotHasBeenMade = false;
+window.missTimeoutId = null;
+window.ballPositionHistory = [];
 
 // track time for physics calculations
 let lastTime = Date.now();
@@ -632,13 +637,19 @@ function createBasketballHoop(x, z, direction) {
     scene.add(rimGroup);
 
     // net
-    createBasketballNet(
+    const net = createBasketballNet(
         x + direction * (backboardThickness / 2 + backboardToRimDistance),
         rimHeight,
         z,
         rimRadius,
         0.6 // net height
     );
+    
+    if (direction > 0) {
+        window.leftBasketNet = net;
+    } else {
+        window.rightBasketNet = net;
+    }
 
     // support structure
     createSupportStructure(
@@ -665,6 +676,12 @@ function createBasketballNet(x, y, z, rimRadius, netHeight) {
 
     // create a group to hold all net lines
     const netGroup = new THREE.Group();
+    
+    // Store net lines for animation
+    netGroup.netLines = [];
+    netGroup.netRings = [];
+    netGroup.originalPositions = [];
+    netGroup.isAnimating = false;
 
     // vertical strips
     for (let i = 0; i < segments; i++) {
@@ -678,8 +695,8 @@ function createBasketballNet(x, y, z, rimRadius, netHeight) {
         // create curved path down to bottom of net
         for (let j = 1; j <= horizontalSegments; j++) {
             const ratio = j / horizontalSegments;
-            // net narrows from top to bottom
-            const narrowingFactor = 1 - (0.6 * ratio);
+            // net narrows less from top to bottom
+            const narrowingFactor = 1 - (0.35 * ratio);
 
             points.push(new THREE.Vector3(
                 x + Math.cos(angle) * rimRadius * narrowingFactor,
@@ -696,6 +713,12 @@ function createBasketballNet(x, y, z, rimRadius, netHeight) {
         });
         const line = new THREE.Line(lineGeometry, lineMaterial);
         netGroup.add(line);
+        
+        // store the line and its original vertices for animation
+        netGroup.netLines.push({
+            line: line,
+            originalPoints: points.map(p => p.clone())
+        });
     }
 
     // horizontal rings
@@ -703,7 +726,7 @@ function createBasketballNet(x, y, z, rimRadius, netHeight) {
         const ringPoints = [];
         const ratio = i / horizontalSegments;
         const ringY = y - ratio * netHeight;
-        const ringRadius = rimRadius * (1 - (0.6 * ratio));
+        const ringRadius = rimRadius * (1 - (0.35 * ratio));
 
         for (let j = 0; j <= segments; j++) {
             const angle = (j / segments) * degrees_to_radians(360);
@@ -722,9 +745,134 @@ function createBasketballNet(x, y, z, rimRadius, netHeight) {
         });
         const ring = new THREE.Line(ringGeometry, ringMaterial);
         netGroup.add(ring);
+        
+        // store the ring and its original vertices for animation
+        netGroup.netRings.push({
+            ring: ring,
+            originalPoints: ringPoints.map(p => p.clone())
+        });
     }
+    
+    // add a function to animate the net when the ball passes through
+    netGroup.animateNet = function(ballPosition) {
+        if (this.isAnimating) return;
+        
+        this.isAnimating = true;
+        const netCenterX = x;
+        const netCenterZ = z;
+        const animationDuration = 0.8; // seconds
+        const startTime = Date.now();
+        
+        // calculate distance from ball to center of net
+        const distanceFromCenter = Math.sqrt(
+            Math.pow(ballPosition.x - netCenterX, 2) + 
+            Math.pow(ballPosition.z - netCenterZ, 2)
+        );
+        
+        const maxInfluenceRadius = rimRadius * 1.2;
+        
+        function updateNetAnimation() {
+            const elapsed = (Date.now() - startTime) / 1000; // seconds
+            const progress = Math.min(elapsed / animationDuration, 1);
+            
+            // wave animation that starts strong and fades out
+            const waveStrength = (1 - progress) * 0.2; // max displacement
+            
+            // update vertical strips
+            netGroup.netLines.forEach((lineObj, lineIndex) => {
+                const angle = (lineIndex / segments) * degrees_to_radians(360);
+                const lineGeometry = lineObj.line.geometry;
+                const positions = lineGeometry.attributes.position.array;
+                
+                for (let j = 0; j < lineGeometry.attributes.position.count; j++) {
+                    const i = j * 3; // position index (x, y, z)
+                    const originalPoint = lineObj.originalPoints[j];
+                    
+                    // only affect points below the rim
+                    if (j > 0) {
+                        const segmentRatio = j / horizontalSegments;
+                        const verticalEffect = segmentRatio * 1.8; // more effect lower down the net
+                        const wavePhase = progress * 12 + lineIndex * 0.4; // wave phase
+                        const waveFactor = Math.sin(wavePhase) * waveStrength * verticalEffect;
+                        
+                        // apply wave displacement
+                        positions[i] = originalPoint.x + waveFactor * Math.cos(angle);
+                        positions[i + 1] = originalPoint.y - verticalEffect * waveStrength * 1.5 * (1 - progress);
+                        positions[i + 2] = originalPoint.z + waveFactor * Math.sin(angle);
+                    }
+                }
+                
+                lineGeometry.attributes.position.needsUpdate = true;
+            });
+            
+            // update horizontal rings
+            netGroup.netRings.forEach((ringObj, ringIndex) => {
+                const ratio = (ringIndex + 1) / horizontalSegments;
+                const ringGeometry = ringObj.ring.geometry;
+                const positions = ringGeometry.attributes.position.array;
+                
+                for (let j = 0; j < ringGeometry.attributes.position.count; j++) {
+                    const i = j * 3; // position index (x, y, z)
+                    const originalPoint = ringObj.originalPoints[j];
+                    const angle = (j / segments) * degrees_to_radians(360);
+                    
+                    const verticalEffect = ratio * 2.0; // more effect lower down the net
+                    const wavePhase = progress * 10 + ringIndex * 0.6; // different wave phase
+                    const waveFactor = Math.sin(wavePhase) * waveStrength * verticalEffect;
+                    
+                    // apply wave displacement
+                    positions[i] = originalPoint.x + waveFactor * Math.cos(angle) * 0.5;
+                    positions[i + 1] = originalPoint.y - verticalEffect * waveStrength * (1 - progress);
+                    positions[i + 2] = originalPoint.z + waveFactor * Math.sin(angle) * 0.5;
+                }
+                
+                ringGeometry.attributes.position.needsUpdate = true;
+            });
+            
+            if (progress < 1) {
+                requestAnimationFrame(updateNetAnimation);
+            } else {
+                // reset to original positions when animation completes
+                netGroup.netLines.forEach((lineObj) => {
+                    const lineGeometry = lineObj.line.geometry;
+                    const positions = lineGeometry.attributes.position.array;
+                    
+                    for (let j = 0; j < lineGeometry.attributes.position.count; j++) {
+                        const i = j * 3;
+                        const originalPoint = lineObj.originalPoints[j];
+                        positions[i] = originalPoint.x;
+                        positions[i + 1] = originalPoint.y;
+                        positions[i + 2] = originalPoint.z;
+                    }
+                    
+                    lineGeometry.attributes.position.needsUpdate = true;
+                });
+                
+                netGroup.netRings.forEach((ringObj) => {
+                    const ringGeometry = ringObj.ring.geometry;
+                    const positions = ringGeometry.attributes.position.array;
+                    
+                    for (let j = 0; j < ringGeometry.attributes.position.count; j++) {
+                        const i = j * 3;
+                        const originalPoint = ringObj.originalPoints[j];
+                        positions[i] = originalPoint.x;
+                        positions[i + 1] = originalPoint.y;
+                        positions[i + 2] = originalPoint.z;
+                    }
+                    
+                    ringGeometry.attributes.position.needsUpdate = true;
+                });
+                
+                netGroup.isAnimating = false;
+            }
+        }
+        
+        updateNetAnimation();
+    };
 
     scene.add(netGroup);
+    
+    return netGroup;
 }
 
 function createSupportStructure(x, z, rimHeight, backboardHeight, backboardWidth, backboardThickness, direction, poleRadius, supportOffset) {
@@ -1443,10 +1591,31 @@ function showShotFeedback(result, isThreePointer = false) {
     }, 2000);
 }
 
+function showInvalidShotMessage(message) {
+    /*
+    show a message for invalid shot attempts
+    */
+
+    const messageElement = document.getElementById('game-message');
+    if (messageElement) {
+        messageElement.textContent = message;
+        messageElement.style.display = 'block';
+        messageElement.style.color = '#ff4444';
+        document.body.style.overflow = 'hidden';
+        
+        // hide message after 3 seconds
+        setTimeout(() => {
+            messageElement.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }, 3000);
+    }
+}
+
 function isThreePointShot(shotPosition, basketPosition) {
     /*
     check if a shot was a 3-pointer
     */
+   
     const threePointRadius = 6.75;
     const distance = Math.sqrt(
         Math.pow(shotPosition.x - basketPosition.x, 2) + 
@@ -1467,8 +1636,21 @@ function recordShotMade(isThreePointer = false) {
     /*
     record a successful shot
     */
+
+    if (gameStats.lastShotResult === 'missed') {
+        return;
+    }
+    
+    // clear any pending timeouts that might trigger a "missed" message
+    if (window.missTimeoutId) {
+        clearTimeout(window.missTimeoutId);
+        window.missTimeoutId = null;
+    }
+    
     gameStats.shotsMade++;
     gameStats.lastShotResult = 'made';
+    
+    window.shotHasBeenMade = true;
     
     if (isThreePointer) {
         gameStats.points += 3;
@@ -1484,9 +1666,18 @@ function recordShotMissed() {
     /*
     record a missed shot
     */
-    gameStats.lastShotResult = 'missed';
-    updateStatsUI();
-    showShotFeedback('missed');
+
+    if (gameStats.lastShotResult === 'made' || window.shotHasBeenMade === true) {
+        return;
+    }
+    
+    window.missTimeoutId = setTimeout(() => {
+        if (gameStats.lastShotResult !== 'made' && window.shotHasBeenMade !== true) {
+            gameStats.lastShotResult = 'missed';
+            updateStatsUI();
+            showShotFeedback('missed');
+        }
+    }, 100);
 }
 
 const cameraPresets = {
@@ -1595,6 +1786,293 @@ function updateCameraStatusDisplay() {
     }
 }
 
+// game modes
+const gameModes = {
+    current: 'free-shoot',
+    modes: {
+        'free-shoot': {
+            name: 'Free Shoot',
+            description: 'Shoot freely with no restrictions',
+            timeLimit: null,
+            restrictToThreePointers: false,
+            showCountdown: false
+        },
+        'three-pointers': {
+            name: '3-Pointers Only',
+            description: 'Only shots from beyond the three-point line count',
+            timeLimit: null,
+            restrictToThreePointers: true,
+            showCountdown: false
+        },
+        'timed-challenge': {
+            name: 'Timed Challenge',
+            description: 'Score as many points as possible in 60 seconds',
+            timeLimit: 60,
+            restrictToThreePointers: false,
+            showCountdown: true
+        },
+        'three-point-challenge': {
+            name: '3-Point Challenge',
+            description: 'Make as many 3-pointers as possible in 45 seconds',
+            timeLimit: 45,
+            restrictToThreePointers: true,
+            showCountdown: true
+        }
+    },
+    timer: {
+        remaining: 0,
+        active: false,
+        intervalId: null
+    },
+    stats: {
+        bestScore: {}
+    }
+};
+
+let lastGameMode = null;
+
+function setGameMode(modeKey) {
+    /*
+    set the current game mode and update any restrictions
+    */
+
+    if (gameModes.modes[modeKey]) {
+        gameModes.current = modeKey;
+
+        // reset timer if mode has a time limit
+        if (gameModes.modes[modeKey].timeLimit) {
+            gameModes.timer.remaining = gameModes.modes[modeKey].timeLimit;
+            gameModes.timer.active = true;
+
+            // clear existing timer
+            if (gameModes.timer.intervalId) {
+                clearInterval(gameModes.timer.intervalId);
+            }
+
+            // start countdown timer
+            gameModes.timer.intervalId = setInterval(() => {
+                if (gameModes.timer.remaining > 0) {
+                    gameModes.timer.remaining--;
+                } else {
+                    // time's up! handle end of game mode
+                    clearInterval(gameModes.timer.intervalId);
+                    gameModes.timer.active = false;
+
+                    // default action: switch back to free shoot mode
+                    setGameMode('free-shoot');
+                }
+            }, 1000);
+        } else {
+            gameModes.timer.active = false;
+            if (gameModes.timer.intervalId) {
+                clearInterval(gameModes.timer.intervalId);
+                gameModes.timer.intervalId = null;
+            }
+        }
+
+        updateGameModeUI();
+    }
+}
+
+function switchGameMode(modeKey) {
+    /*
+    switch to a different game mode
+    */
+   
+    if (!gameModes.modes[modeKey]) return;
+    
+    stopGameTimer();
+    resetGameStats();
+    
+    // switch mode
+    gameModes.current = modeKey;
+    const mode = gameModes.modes[modeKey];
+    
+    // start timer if mode requires it
+    if (mode.timeLimit) {
+        startGameTimer(mode.timeLimit);
+    }
+    
+    updateGameModeUI();
+    
+    // show mode change feedback
+    const keyFeedback = document.getElementById('key-feedback');
+    if (keyFeedback) {
+        keyFeedback.textContent = `Game Mode: ${mode.name}`;
+        keyFeedback.style.opacity = '1';
+        keyFeedback.style.color = '#ffaa00';
+        
+        setTimeout(() => {
+            keyFeedback.style.opacity = '0';
+        }, 3000);
+    }
+}
+
+function startGameTimer(seconds) {
+    /*
+    start a countdown timer for timed game modes
+    */
+
+    gameModes.timer.remaining = seconds;
+    gameModes.timer.active = true;
+    
+    // clear any existing timer
+    if (gameModes.timer.intervalId) {
+        clearInterval(gameModes.timer.intervalId);
+    }
+    
+    // start countdown
+    gameModes.timer.intervalId = setInterval(() => {
+        gameModes.timer.remaining--;
+        updateTimerUI();
+        
+        if (gameModes.timer.remaining <= 0) {
+            endTimedChallenge();
+        }
+    }, 1000);
+    
+    updateTimerUI();
+}
+
+function stopGameTimer() {
+    /*
+    stop the game timer
+    */
+
+    gameModes.timer.active = false;
+    if (gameModes.timer.intervalId) {
+        clearInterval(gameModes.timer.intervalId);
+        gameModes.timer.intervalId = null;
+    }
+}
+
+function endTimedChallenge() {
+    /*
+    end a timed challenge and show results
+    */
+
+    stopGameTimer();
+    
+    // reset ball position when challenge ends
+    resetBasketballPosition();
+    
+    const mode = gameModes.modes[gameModes.current];
+    const finalScore = gameStats.points;
+    const shotsMade = gameStats.shotsMade;
+    const shotAttempts = gameStats.shotAttempts;
+    const accuracy = shotAttempts > 0 ? Math.round((shotsMade / shotAttempts) * 100) : 0;
+    
+    // check for new best score
+    let isNewBest = false;
+    if (gameModes.stats && gameModes.stats.bestScore) {
+        if (gameModes.stats.bestScore[gameModes.current] === undefined || 
+            finalScore > gameModes.stats.bestScore[gameModes.current]) {
+            gameModes.stats.bestScore[gameModes.current] = finalScore;
+            isNewBest = true;
+        }
+    }
+    
+    // show results in center screen
+    showTimedChallengeResults(mode.name, finalScore, shotsMade, shotAttempts, accuracy, isNewBest);
+    
+    // reset to free mode after showing results
+    setTimeout(() => {
+        switchGameMode('free-shoot');
+    }, 6000);
+}
+
+function isValidShot(shotPosition, targetBasket) {
+    /*
+    check if a shot is valid for the current game mode
+    */
+
+    const mode = gameModes.modes[gameModes.current];
+    
+    // if mode restricts to three-pointers, check if it's beyond the arc
+    if (mode.restrictToThreePointers) {
+        const is3Point = isThreePointShot(shotPosition, targetBasket);
+        if (!is3Point) {
+            showInvalidShotMessage('You must shoot from the 3-point line! Move back and try again.');
+        }
+        return is3Point;
+    }
+    
+    return true;
+}
+
+function resetGameStats() {
+    /*
+    reset game statistics for new game mode
+    */
+
+    gameStats.shotAttempts = 0;
+    gameStats.shotsMade = 0;
+    gameStats.points = 0;
+    gameStats.accuracy = 0;
+    gameStats.lastShotResult = null;
+    
+    // reset UI
+    updateStatsUI();
+    
+    // reset scoreboard
+    const homeScoreElement = document.getElementById('home-score');
+    const awayScoreElement = document.getElementById('away-score');
+    if (homeScoreElement) homeScoreElement.textContent = '0';
+    if (awayScoreElement) awayScoreElement.textContent = '0';
+    
+    if (window.updateScoreboardDisplay && window.scoreboardTexture) {
+        window.updateScoreboardDisplay(0, 0);
+        window.scoreboardTexture.needsUpdate = true;
+    }
+}
+
+function updateGameModeUI() {
+    /*
+    update the game mode display in the UI
+    */
+
+    const gameModeElement = document.getElementById('current-game-mode');
+    if (gameModeElement) {
+        const mode = gameModes.modes[gameModes.current];
+        gameModeElement.textContent = mode.name;
+    }
+    
+    const modeDescElement = document.getElementById('mode-description');
+    if (modeDescElement) {
+        const mode = gameModes.modes[gameModes.current];
+        modeDescElement.textContent = mode.description;
+    }
+    
+    updateTimerUI();
+}
+
+function updateTimerUI() {
+    /*
+    update the timer display
+    */
+
+    const timerElement = document.getElementById('game-timer');
+    if (timerElement) {
+        if (gameModes.timer.active) {
+            const minutes = Math.floor(gameModes.timer.remaining / 60);
+            const seconds = gameModes.timer.remaining % 60;
+            timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            timerElement.style.display = 'block';
+            
+            // change color when time is running out
+            if (gameModes.timer.remaining <= 10) {
+                timerElement.style.color = '#ff0000';
+            } else if (gameModes.timer.remaining <= 30) {
+                timerElement.style.color = '#ffaa00';
+            } else {
+                timerElement.style.color = '#ffffff';
+            }
+        } else {
+            timerElement.style.display = 'none';
+        }
+    }
+}
+
 // Create all elements
 createBasketballCourt();
 createBasketballHoops();
@@ -1692,18 +2170,55 @@ function handleKeyDown(e) {
         // (allow shooting if the ball is not already in air)
         if (!basketballMovement.shooting.active) {
             shootBasketball();
-            feedbackMessage = `Shot taken with power: ${basketballMovement.shotPower.current}%`;
+                       feedbackMessage = `Shot taken with power: ${basketballMovement.shotPower.current}%`;
         } else {
             feedbackMessage = `Ball is already in air!`;
         }
     } else if (e.key === "r" || e.key === "R") {
         resetBasketballPosition();
-        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (ball position and shot power reset)`;
+        resetGameStats();
+        resetGameMode();
+        feedbackMessage = `Key pressed: ${e.key.toUpperCase()} (ball position, shot power, stats, and mode timer reset)`;
     }
     // toggle UI visibility with H/h key
     else if (e.key === "h" || e.key === "H") {
         toggleUIVisibility();
         feedbackMessage = `UI controls: ${isUiVisible ? 'Shown' : 'Hidden'}`;
+    }
+    // game mode switching with F1-F4 keys
+    else if (e.key === "F1") {
+        switchGameMode('free-shoot');
+        feedbackMessage = `Game Mode: Free Shoot`;
+    }
+    else if (e.key === "F2") {
+        switchGameMode('three-pointers');
+        feedbackMessage = `Game Mode: 3-Pointers Only`;
+    }
+    else if (e.key === "F3") {
+        switchGameMode('timed-challenge');
+        feedbackMessage = `Game Mode: Timed Challenge (60s)`;
+    }
+    else if (e.key === "F4") {
+        switchGameMode('three-point-challenge');
+        feedbackMessage = `Game Mode: 3-Point Challenge (45s)`;
+    }
+
+    // set game mode based on number keys (1-4)
+    else if (e.key === "1") {
+        setGameMode('free-shoot');
+        feedbackMessage = `Game Mode: Free Shoot`;
+    }
+    else if (e.key === "2") {
+        setGameMode('three-pointers');
+        feedbackMessage = `Game Mode: 3-Pointers Only`;
+    }
+    else if (e.key === "3") {
+        setGameMode('timed-challenge');
+        feedbackMessage = `Game Mode: Timed Challenge (60s)`;
+    }
+    else if (e.key === "4") {
+        setGameMode('three-point-challenge');
+        feedbackMessage = `Game Mode: 3-Point Challenge (45s)`;
     }
 
     // display the feedback message
@@ -1812,10 +2327,51 @@ function resetBasketballPosition() {
         basketballMovement.currentSpeed.z = 0;
         basketball.bouncePhase = 0;
 
-        // reset shot power to default
-        basketballMovement.shotPower.current = basketballMovement.shotPower.default;
-        updatePowerUI();
+        // reset shot power to default only if not in free shoot mode
+        if (gameModes.current !== 'free-shoot' || gameStats.lastShotResult !== 'made') {
+            basketballMovement.shotPower.current = basketballMovement.shotPower.default;
+            updatePowerUI();
+        }
+        
+        // If shot is still active and no result was recorded, count it as a miss
+        // But only if it hasn't been marked as made and isn't pending a decision
+        if (basketballMovement.shooting.active && 
+            gameStats.lastShotResult === null && 
+            !window.shotHasBeenMade && 
+            !window.ballPendingScorekeeperDecision) {
+            
+            recordShotMissed();
+        }
+        
+        // stop shooting physics
+        basketballMovement.shooting.active = false;
     }
+}
+
+function resetBallPosition() {
+    /*
+    helper function to reset ball position (used in scoring)
+    */
+
+    basketballMovement.shooting.active = false;
+    
+    // clear any pending timeout
+    if (window.missTimeoutId) {
+        clearTimeout(window.missTimeoutId);
+        window.missTimeoutId = null;
+    }
+    
+    // in free-shoot mode with a made shot, don't reset position but allow new shots
+    if (gameModes.current === 'free-shoot' && gameStats.lastShotResult === 'made') {
+        setTimeout(() => {
+            gameStats.lastShotResult = null;
+        }, 1000);
+        return;
+    }
+    
+    resetBasketballPosition();
+    
+    window.ballPositionHistory = [];
 }
 
 // window resize for responsive UI
@@ -1852,7 +2408,7 @@ function updateBasketballPosition() {
         targetSpeedX = -basketballMovement.speed;
     }
     else if (basketballMovement.keysPressed["ArrowRight"] || basketballMovement.keysPressed["d"] || basketballMovement.keysPressed["D"]) {
-        targetSpeedX = basketballMovement.speed;
+               targetSpeedX = basketballMovement.speed;
     }
 
     // check for vertical movement (forward/backward)
@@ -1993,13 +2549,43 @@ function shootBasketball() {
     const distanceToRight = ballPosition.distanceTo(rightBasketPosition);
     const targetBasket = distanceToLeft < distanceToRight ? leftBasketPosition : rightBasketPosition;
 
-    // Reset last shot result and record shot attempt for statistics
+    // reset tracking variables for new shot
     gameStats.lastShotResult = null;
+    window.shotHasBeenMade = false;
+    window.ballPendingScorekeeperDecision = false;
+    
+    // clear any existing timeout
+    if (window.missTimeoutId) {
+        clearTimeout(window.missTimeoutId);
+        window.missTimeoutId = null;
+    }
+    
+    // clear ball position history for new shot
+    window.ballPositionHistory = [];
+    
     gameStats.lastShotPosition = {
         x: ballPosition.x,
         z: ballPosition.z,
         targetBasket: targetBasket
     };
+    
+    // check if shot is valid for current game mode
+    if (!isValidShot(ballPosition, targetBasket)) {
+        const mode = gameModes.modes[gameModes.current];
+        const keyFeedback = document.getElementById('key-feedback');
+        if (keyFeedback) {
+            keyFeedback.textContent = `Invalid shot for ${mode.name} mode!`;
+            keyFeedback.style.opacity = '1';
+            keyFeedback.style.color = '#ff0000';
+            
+            setTimeout(() => {
+                keyFeedback.style.opacity = '0';
+            }, 2000);
+        }
+        basketballMovement.shooting.active = false;
+        return;
+    }
+    
     recordShotAttempt();
 
     // calculate direction vector to the target basket
@@ -2125,9 +2711,24 @@ function updateShootingPhysics(deltaTime) {
         // ball hit the floor
         basketball.position.y = basketballMovement.shooting.floorY;
 
-        // Simple miss detection: if ball hits floor and no score yet, it's a miss
-        if (gameStats.lastShotResult === null) {
-            recordShotMissed(); // Just record the miss, don't stop motion
+        const isPendingScorekeeperDecision = window.ballPendingScorekeeperDecision === true;
+        const shotHasBeenMade = window.shotHasBeenMade === true;
+        
+        if (gameStats.lastShotResult === null && 
+            window.ballPositionHistory && 
+            window.ballPositionHistory.length > 5 &&
+            !isPendingScorekeeperDecision &&
+            !shotHasBeenMade) {
+            
+            // check distance from both rims before calling it a miss
+            const leftDistance = basketball.position.distanceTo(new THREE.Vector3(-14.5, 6, 0));
+            const rightDistance = basketball.position.distanceTo(new THREE.Vector3(14.5, 6, 0));
+            
+            if (leftDistance > 3 && rightDistance > 3) {
+                if (!window.ballPendingScorekeeperDecision && !window.shotHasBeenMade) {
+                    recordShotMissed();
+                }
+            }
         }
 
         // bounce with energy loss
@@ -2180,44 +2781,133 @@ function checkForScoring(position) {
     const rightRimPosition = new THREE.Vector3(14.5, 6, 0);
     const rimRadius = 0.6;
     const scoringHeight = 6.0;
-    const scoringThreshold = 0.4; // smaller threshold for clean shots only
-    const heightThreshold = 0.3;
+    const scoringThreshold = 0.45;
+    const heightThreshold = 0.35;
+    
+    // additional threshold for net animation
+    const netAnimationThreshold = rimRadius * 1.2;
+    const netHeightThreshold = heightThreshold * 2;
 
-    // check if ball is passing through rim height for clean shots
+    // store current ball position for trajectory analysis
+    if (!window.ballPositionHistory) {
+        window.ballPositionHistory = [];
+    }
+    
+    // keep a history of recent ball positions (max 10)
+    window.ballPositionHistory.push({
+        position: position.clone(),
+        time: Date.now()
+    });
+    
+    if (window.ballPositionHistory.length > 10) {
+        window.ballPositionHistory.shift();
+    }
+
+    // check for net animation (if ball is passing through or near the rim)
+    if (Math.abs(position.y - scoringHeight) < netHeightThreshold) {
+        // check for left basket proximity
+        const leftDistance = Math.sqrt(
+            Math.pow(position.x - leftRimPosition.x, 2) +
+            Math.pow(position.z - leftRimPosition.z, 2)
+        );
+
+        if (leftDistance < netAnimationThreshold && window.leftBasketNet && !window.leftBasketNet.isAnimating) {
+            window.leftBasketNet.animateNet(position);
+        }
+
+        // check for right basket proximity
+        const rightDistance = Math.sqrt(
+            Math.pow(position.x - rightRimPosition.x, 2) +
+            Math.pow(position.z - rightRimPosition.z, 2)
+        );
+
+        if (rightDistance < netAnimationThreshold && window.rightBasketNet && !window.rightBasketNet.isAnimating) {
+            window.rightBasketNet.animateNet(position);
+        }
+    }
+
     if (Math.abs(position.y - scoringHeight) < heightThreshold) {
-        // check for left basket scoring (clean shot)
+        // check for left basket scoring
         const leftDistance = Math.sqrt(
             Math.pow(position.x - leftRimPosition.x, 2) +
             Math.pow(position.z - leftRimPosition.z, 2)
         );
 
         if (leftDistance < scoringThreshold) {
-            // clean shot through left basket - only score if not already scored
-            if (gameStats.lastShotResult === null) {
+            // check if we've detected a downward trajectory through the hoop
+            if (isDownwardTrajectory() && gameStats.lastShotResult === null) {
+                window.ballPendingScorekeeperDecision = true;
+                
                 handleScore('away');
-                setTimeout(() => {
-                    resetBallPosition();
-                }, 1000);
+                // animate the left basket net
+                if (window.leftBasketNet) {
+                    window.leftBasketNet.animateNet(position);
+                }
+                
+                if (gameModes.current !== 'free-shoot') {
+                    setTimeout(() => {
+                        window.ballPendingScorekeeperDecision = false;
+                        resetBallPosition();
+                    }, 1000);
+                } else {
+                    setTimeout(() => {
+                        window.ballPendingScorekeeperDecision = false;
+                        gameStats.lastShotResult = null;
+                    }, 1000);
+                }
             }
             return;
         }
 
-        // check for right basket scoring (clean shot)
+        // check for right basket scoring
         const rightDistance = Math.sqrt(
             Math.pow(position.x - rightRimPosition.x, 2) +
             Math.pow(position.z - rightRimPosition.z, 2)
         );
 
         if (rightDistance < scoringThreshold) {
-            // clean shot through right basket - only score if not already scored
-            if (gameStats.lastShotResult === null) {
+            // check if we've detected a downward trajectory through the hoop
+            if (isDownwardTrajectory() && gameStats.lastShotResult === null) {
+                window.ballPendingScorekeeperDecision = true;
+                
                 handleScore('home');
-                setTimeout(() => {
-                    resetBallPosition();
-                }, 1000);
+                // animate the right basket net
+                if (window.rightBasketNet) {
+                    window.rightBasketNet.animateNet(position);
+                }
+                
+                if (gameModes.current !== 'free-shoot') {
+                    setTimeout(() => {
+                        window.ballPendingScorekeeperDecision = false;
+                        resetBallPosition();
+                    }, 1000);
+                } else {
+                    setTimeout(() => {
+                        window.ballPendingScorekeeperDecision = false;
+                        gameStats.lastShotResult = null;
+                    }, 1000);
+                }
             }
             return;
         }
+    }
+    
+    function isDownwardTrajectory() {
+        /*
+        check if the ball is moving downward based on its position history
+        */
+
+        // need at least three positions to determine direction reliably
+        if (window.ballPositionHistory.length < 3) {
+            return false;
+        }
+        
+        // get the most recent positions
+        const latest = window.ballPositionHistory[window.ballPositionHistory.length - 1];
+        const previous = window.ballPositionHistory[window.ballPositionHistory.length - 2];
+        const evenEarlier = window.ballPositionHistory[window.ballPositionHistory.length - 3];
+        
+        return latest.position.y < previous.position.y && previous.position.y < evenEarlier.position.y;
     }
 }
 
@@ -2233,6 +2923,22 @@ function handleScore(team) {
             gameStats.lastShotPosition, 
             gameStats.lastShotPosition.targetBasket
         );
+    }
+
+    // check game mode restrictions
+    const mode = gameModes.modes[gameModes.current];
+    if (mode.restrictToThreePointers && !isThreePointer) {
+        const keyFeedback = document.getElementById('key-feedback');
+        if (keyFeedback) {
+            keyFeedback.textContent = 'Shot made but doesn\'t count - not a 3-pointer!';
+            keyFeedback.style.opacity = '1';
+            keyFeedback.style.color = '#ffaa00';
+            
+            setTimeout(() => {
+                keyFeedback.style.opacity = '0';
+            }, 3000);
+        }
+        return;
     }
 
     recordShotMade(isThreePointer);
@@ -2256,7 +2962,10 @@ function handleScore(team) {
         // show feedback
         const keyFeedback = document.getElementById('key-feedback');
         if (keyFeedback) {
-            keyFeedback.textContent = `SCORE! Home team +${pointsToAdd} points!`;
+            let message = `SCORE! Home team +${pointsToAdd} points!`;
+            if (isThreePointer) message += ' (3-POINTER!)';
+            
+            keyFeedback.textContent = message;
             keyFeedback.style.opacity = '1';
             keyFeedback.style.color = '#00aaff'; // blue for home team
 
@@ -2271,7 +2980,10 @@ function handleScore(team) {
         // show feedback
         const keyFeedback = document.getElementById('key-feedback');
         if (keyFeedback) {
-            keyFeedback.textContent = `SCORE! Away team +${pointsToAdd} points!`;
+            let message = `SCORE! Away team +${pointsToAdd} points!`;
+            if (isThreePointer) message += ' (3-POINTER!)';
+            
+            keyFeedback.textContent = message;
             keyFeedback.style.opacity = '1';
             keyFeedback.style.color = '#ff4400'; // red for away team
 
@@ -2286,6 +2998,104 @@ function handleScore(team) {
         window.updateScoreboardDisplay(homeScore, awayScore);
         window.scoreboardTexture.needsUpdate = true;
     }
+}
+
+function showTimedChallengeResults(modeName, finalScore, shotsMade, shotAttempts, accuracy, isNewBest) {
+    /*
+    show timed challenge results in center screen
+    */
+    
+    // create results overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'challenge-results-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    overlay.style.zIndex = '10000';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.5s ease';
+    
+    // create results content
+    const content = document.createElement('div');
+    content.style.backgroundColor = 'rgba(20, 20, 20, 0.95)';
+    content.style.border = '3px solid #ffcc00';
+    content.style.borderRadius = '15px';
+    content.style.padding = '30px';
+    content.style.textAlign = 'center';
+    content.style.color = 'white';
+    content.style.fontFamily = 'Arial, sans-serif';
+    content.style.maxWidth = '500px';
+    content.style.boxShadow = '0 0 30px rgba(255, 204, 0, 0.5)';
+    content.style.transform = 'scale(0.8)';
+    content.style.transition = 'transform 0.5s ease';
+    
+    // create content HTML
+    content.innerHTML = `
+        <h2 style="color: #ffcc00; margin: 0 0 20px 0; font-size: 28px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">
+            🏀 ${modeName} Complete!
+        </h2>
+        <div style="font-size: 18px; margin-bottom: 15px;">
+            <div style="margin: 10px 0;">
+                <span style="color: #aaaaaa;">Final Score:</span>
+                <span style="color: #00ff00; font-weight: bold; font-size: 24px; margin-left: 10px;">${finalScore}</span>
+                ${isNewBest ? '<span style="color: #ffaa00; font-weight: bold; margin-left: 10px;">🏆 NEW BEST!</span>' : ''}
+            </div>
+            <div style="margin: 10px 0;">
+                <span style="color: #aaaaaa;">Shots Made:</span>
+                <span style="color: #ffffff; font-weight: bold; margin-left: 10px;">${shotsMade} / ${shotAttempts}</span>
+            </div>
+            <div style="margin: 10px 0;">
+                <span style="color: #aaaaaa;">Accuracy:</span>
+                <span style="color: #ffffff; font-weight: bold; margin-left: 10px;">${accuracy}%</span>
+            </div>
+        </div>
+        <div style="font-size: 16px; color: #cccccc; margin-top: 20px;">
+            Returning to Free Shoot mode...
+        </div>
+    `;
+    
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+    
+    // animate in
+    setTimeout(() => {
+        overlay.style.opacity = '1';
+        content.style.transform = 'scale(1)';
+    }, 100);
+    
+    // remove after delay
+    setTimeout(() => {
+        overlay.style.opacity = '0';
+        content.style.transform = 'scale(0.8)';
+        
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }, 500);
+    }, 5500);
+}
+
+function resetGameMode() {
+    /*
+    reset the current game mode including resetting timers 
+    */
+    const currentModeKey = gameModes.current;
+    stopGameTimer();
+    
+    // if the current mode has a time limit, restart it with fresh time
+    if (gameModes.modes[currentModeKey].timeLimit) {
+        startGameTimer(gameModes.modes[currentModeKey].timeLimit);
+    }
+    
+    updateGameModeUI();
+    updateTimerUI();
 }
 
 // Animation function
@@ -2316,7 +3126,8 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// init stats UI
+// init stats UI and game mode
 updateStatsUI();
+updateGameModeUI();
 
 animate();

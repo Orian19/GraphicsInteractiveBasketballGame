@@ -96,16 +96,15 @@
 			
 			.ui-container:hover {
 				background-color: rgba(0, 0, 0, 0.7);
-			}
-
-			.controls-container {
+			}			.controls-container {
 				bottom: 20px;
 				left: 20px;
 				max-width: 300px;
-				max-height: 80vh;
+				max-height: 70vh;
 				overflow-y: auto;
 				scrollbar-width: thin;
 				scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+				transform: translateY(-15px);
 			}
 			
 			.controls-container::-webkit-scrollbar {
@@ -279,8 +278,7 @@
 			}
 		</style>
 		<script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
-	</head>	<body>
-		<div class="stats-container">
+	</head>	<body>		<div class="stats-container">
 			<div class="stats-title">📊 SHOT STATS</div>
 			<div class="stat-row">
 				<span class="stat-label">Attempts:</span>
@@ -299,6 +297,16 @@
 				<span class="stat-value" id="shot-accuracy">0%</span>
 			</div>
 		</div>
+
+		<div class="game-mode-container" style="position: fixed; top: 20px; left: 20px; background-color: rgba(0, 0, 0, 0.7); border: 2px solid #00ff00; border-radius: 6px; color: white; padding: 10px; font-size: 14px; z-index: 1000; min-width: 200px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);">
+			<div style="font-size: 15px; font-weight: bold; margin-bottom: 8px; text-align: center; color: #00ff00; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);">🎮 GAME MODE</div>
+			<div style="display: flex; justify-content: space-between; margin: 3px 0; font-size: 14px;">
+				<span style="color: #cccccc;">Current:</span>
+				<span style="color: #ffffff; font-weight: bold;" id="current-game-mode">Free Shoot</span>
+			</div>
+			<div style="font-size: 12px; color: #aaaaaa; text-align: center; margin-top: 5px;" id="mode-description">Shoot freely with no restrictions</div>
+			<div id="game-timer" style="font-size: 20px; font-weight: bold; text-align: center; margin-top: 8px; color: #ffffff; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9); display: none;">1:00</div>
+		</div>
 		
 		<div class="shot-feedback" id="shot-feedback"></div>
 
@@ -309,12 +317,17 @@
 				<div>AWAY <span class="score-value" id="away-score">0</span></div>
 			</div>
 		</div>
-
 		<div class="ui-container controls-container">
 			<h3>CONTROLS</h3>
 			<p><span class="key-command">O</span> Toggle orbit camera</p>
 			<p><span class="key-command">H</span> Toggle UI visibility</p>
 			<p><span class="key-command">R</span> Reset ball position & power</p>
+			
+			<h4>Game Modes</h4>
+			<p><span class="key-command">F1</span> Free Shoot (Default)</p>
+			<p><span class="key-command">F2</span> 3-Pointers Only</p>
+			<p><span class="key-command">F3</span> Timed Challenge (60s)</p>
+			<p><span class="key-command">F4</span> 3-Point Challenge (45s)</p>
 			
 			<h4>Camera Presets</h4>
 			<p><span class="key-command">1</span> Default view</p>
@@ -349,7 +362,24 @@
 			</div>
 			<div class="power-value" id="power-value">50%</div>
 		</div>
-		
+				<div id="game-message" style="
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			background: rgba(0, 0, 0, 0.9);
+			color: #ff4444;
+			padding: 20px;
+			border-radius: 10px;
+			font-size: 18px;
+			font-weight: bold;
+			text-align: center;
+			display: none;
+			z-index: 10000;
+			border: 2px solid #ff4444;
+			box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+		"></div>
+
 		<script src="src/hw6.js" type="module"></script>
 	</body>
 </html>
