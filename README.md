@@ -115,6 +115,6 @@ Our physics implementation creates a satisfying and realistic basketball shootin
 
 ## Video
 
-[Download Game Demo Video](screenshots/gamePlayDemo.mov)
+https://github.com/user-attachments/assets/c31a7acb-ab11-459c-990a-15253ab498ef
 
-*Note: The gameplay demonstration video shows the interactive basketball game with physics-based movement, shooting mechanics, and scoring system in action. Download and play the video to see all implemented features.*
+The gameplay demonstration video shows the interactive basketball game with physics-based movement, shooting mechanics, and scoring system in action. Download and play the video to see all implemented features.
